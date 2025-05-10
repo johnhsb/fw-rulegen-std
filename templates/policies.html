@@ -1,0 +1,412 @@
+{% extends "base.html" %}
+
+{% block title %}정책 추천 - 방화벽 정책 추천 시스템{% endblock %}
+
+{% block head %}
+<style>
+    .policy-card {
+        margin-bottom: 20px;
+        transition: all 0.3s ease;
+        background-color: #1e1e1e;
+        border-color: #333;
+    }
+    .policy-card:hover {
+        box-shadow: 0 0.5rem 1rem rgba(255, 255, 255, 0.1);
+        transform: translateY(-2px);
+    }
+    .policy-header {
+        font-weight: bold;
+        background-color: #2d2d2d;
+        padding: 10px;
+        border-bottom: 1px solid #444;
+        color: #e0e0e0;
+    }
+    .network-list {
+        max-height: 150px;
+        overflow-y: auto;
+        background-color: #1a1a1a;
+    }
+    .network-list::-webkit-scrollbar {
+        width: 8px;
+    }
+    .network-list::-webkit-scrollbar-track {
+        background: #1a1a1a;
+    }
+    .network-list::-webkit-scrollbar-thumb {
+        background: #444;
+        border-radius: 4px;
+    }
+    .network-list::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+    .list-group-item {
+        background-color: #1a1a1a;
+        border-color: #333;
+        color: #e0e0e0;
+    }
+    .badge-policy-id {
+        font-size: 0.9rem;
+    }
+    .policy-actions {
+        background-color: #2d2d2d;
+        padding: 10px;
+        border-top: 1px solid #333;
+    }
+    .label-ipv6 {
+        background-color: #6610f2;
+    }
+    .filter-controls {
+        margin-bottom: 20px;
+    }
+    .modal-content {
+        background-color: #1e1e1e;
+        border-color: #333;
+    }
+    .modal-header {
+        background-color: #2d2d2d;
+        border-bottom-color: #333;
+    }
+    .modal-footer {
+        background-color: #2d2d2d;
+        border-top-color: #333;
+    }
+    .badge.bg-secondary {
+        background-color: #495057 !important;
+    }
+    .badge.bg-info {
+        background-color: #0dcaf0 !important;
+        color: #000;
+    }
+    .badge.bg-success {
+        background-color: #198754 !important;
+    }
+    .badge.bg-primary {
+        background-color: #0d6efd !important;
+    }
+    .badge.bg-danger {
+        background-color: #dc3545 !important;
+    }
+    .badge.bg-dark {
+        background-color: #212529 !important;
+    }
+
+    .modal-content textarea {
+        background-color: #2d2d2d;
+        border-color: #444;
+        color: #e0e0e0;
+    }
+    .modal-content textarea:focus {
+        background-color: #333;
+        border-color: #555;
+        color: #e0e0e0;
+        box-shadow: 0 0 0 0.25rem rgba(66, 153, 225, 0.25);
+    }
+    
+    .list-group-item:hover {
+        background-color: #2d2d2d;
+    }
+    
+    .policy-actions .text-muted {
+        color: #adb5bd !important;
+    }
+
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>정책 추천</h2>
+
+{% if timestamp %}
+<div class="alert alert-info">
+    분석 결과: {{ timestamp[:8] }} {{ timestamp[9:11] }}:{{ timestamp[11:13] }}:{{ timestamp[13:15] }}
+</div>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">추천 정책 (총 {{ policies|length }}개)</h5>
+        <a href="/config{% if timestamp %}?timestamp={{ timestamp }}{% endif %}" class="btn btn-light btn-sm">주니퍼 설정 보기</a>
+    </div>
+    <div class="card-body">
+        <div class="filter-controls">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="policy-search" class="form-label">정책 검색</label>
+                    <input type="text" class="form-control" id="policy-search" placeholder="정책 이름, IP 등으로 검색">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="protocol-filter" class="form-label">프로토콜 필터</label>
+                    <select class="form-select" id="protocol-filter">
+                        <option value="all">모든 프로토콜</option>
+                        <option value="tcp">TCP</option>
+                        <option value="udp">UDP</option>
+                        <option value="icmp">ICMP</option>
+                        <option value="icmpv6">ICMPv6</option>
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="ip-version-filter" class="form-label">IP 버전</label>
+                    <select class="form-select" id="ip-version-filter">
+                        <option value="all">모든 IP 버전</option>
+                        <option value="ipv4">IPv4</option>
+                        <option value="ipv6">IPv6</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row" id="policy-list">
+            {% for policy in policies %}
+            <div class="col-md-6 policy-item" 
+                 data-name="{{ policy.name }}" 
+                 data-protocols="{{ policy.protocols|join(',') }}" 
+                 data-ipv6="{{ policy.is_ipv6 }}">
+                <div class="card policy-card">
+                    <div class="card-header policy-header d-flex justify-content-between align-items-center">
+                        <span>{{ policy.name }}</span>
+                        <span class="badge {% if policy.is_ipv6 %}label-ipv6{% else %}bg-primary{% endif %} badge-policy-id">
+                            {{ policy.id }}
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <h6>출발지 네트워크</h6>
+                                <div class="network-list">
+                                    <ul class="list-group">
+                                        {% for network in policy.src_networks %}
+                                        <li class="list-group-item py-1">{{ network }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>목적지 네트워크</h6>
+                                <div class="network-list">
+                                    <ul class="list-group">
+                                        {% for network in policy.dst_networks %}
+                                        <li class="list-group-item py-1">{{ network }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <h6>서비스/포트</h6>
+                                <p>
+                                    {% for service in policy.service_names %}
+                                    <span class="badge bg-secondary">{{ service }}</span>
+                                    {% endfor %}
+                                </p>
+                                <p>
+                                    {% for port_range in policy.port_ranges %}
+                                    <span class="badge bg-info text-dark">{{ port_range }}</span>
+                                    {% endfor %}
+                                </p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>프로토콜</h6>
+                                <p>
+                                    {% for protocol in policy.protocols %}
+                                    <span class="badge bg-success">{{ protocol }}</span>
+                                    {% endfor %}
+                                </p>
+                                <h6>존</h6>
+                                <p>
+                                    {% for zone in policy.src_zones %}
+                                    <span class="badge bg-primary">{{ zone }}</span>
+                                    {% endfor %}
+                                    <span class="badge bg-dark">→</span>
+                                    {% for zone in policy.dst_zones %}
+                                    <span class="badge bg-danger">{{ zone }}</span>
+                                    {% endfor %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer policy-actions">
+                        <div class="d-flex justify-content-between">
+                            <span class="text-muted">트래픽 양: {{ policy.traffic_count }}</span>
+                            <button class="btn btn-sm btn-outline-primary" onclick="editPolicy('{{ policy.id }}')">수정</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        {% if not policies %}
+        <div class="alert alert-warning">
+            추천 정책이 없습니다. 먼저 로그 분석을 실행해 주세요.
+        </div>
+        {% endif %}
+    </div>
+    {% if policies %}
+    <div class="card-footer">
+        <div class="d-flex justify-content-between">
+            <a href="/analyze{% if timestamp %}?timestamp={{ timestamp }}{% endif %}" class="btn btn-secondary">분석 결과로 돌아가기</a>
+            <a href="/config{% if timestamp %}?timestamp={{ timestamp }}{% endif %}" class="btn btn-primary">주니퍼 방화벽 설정 생성</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 정책 편집 모달 -->
+<div class="modal fade" id="policyEditModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">정책 편집</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="policyEditForm">
+                    <input type="hidden" id="edit-policy-id">
+                    <div class="mb-3">
+                        <label for="edit-policy-name" class="form-label">정책 이름</label>
+                        <input type="text" class="form-control" id="edit-policy-name">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="edit-src-networks" class="form-label">출발지 네트워크</label>
+                                <textarea class="form-control" id="edit-src-networks" rows="4" placeholder="한 줄에 하나의 네트워크"></textarea>
+                                <div class="form-text">예: 192.168.1.0/24</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="edit-dst-networks" class="form-label">목적지 네트워크</label>
+                                <textarea class="form-control" id="edit-dst-networks" rows="4" placeholder="한 줄에 하나의 네트워크"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="edit-port-ranges" class="form-label">포트 범위</label>
+                                <input type="text" class="form-control" id="edit-port-ranges" placeholder="예: 80-80,443-443,8080-8090">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="edit-protocols" class="form-label">프로토콜</label>
+                                <select class="form-select" id="edit-protocols" multiple>
+                                    <option value="tcp">TCP</option>
+                                    <option value="udp">UDP</option>
+                                    <option value="icmp">ICMP</option>
+                                    <option value="icmpv6">ICMPv6</option>
+                                </select>
+                                <div class="form-text">Ctrl 키를 누른 상태로 여러 항목 선택</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="edit-src-zones" class="form-label">출발지 존</label>
+                                <input type="text" class="form-control" id="edit-src-zones" placeholder="예: trust,dmz">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="edit-dst-zones" class="form-label">목적지 존</label>
+                                <input type="text" class="form-control" id="edit-dst-zones" placeholder="예: untrust,internet">
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-primary" id="savePolicy">저장</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // 검색 필터 기능
+    $('#policy-search').on('keyup', function() {
+        filterPolicies();
+    });
+    
+    // 프로토콜 필터
+    $('#protocol-filter').on('change', function() {
+        filterPolicies();
+    });
+    
+    // IP 버전 필터
+    $('#ip-version-filter').on('change', function() {
+        filterPolicies();
+    });
+    
+    // 초기 정책 로드
+    filterPolicies();
+    
+    // 정책 저장 버튼 이벤트
+    $('#savePolicy').on('click', function() {
+        savePolicyChanges();
+    });
+});
+
+function filterPolicies() {
+    var searchText = $('#policy-search').val().toLowerCase();
+    var protocolFilter = $('#protocol-filter').val();
+    var ipVersionFilter = $('#ip-version-filter').val();
+    
+    $('.policy-item').each(function() {
+        var policyName = $(this).data('name').toLowerCase();
+        var protocols = $(this).data('protocols').toLowerCase();
+        var isIpv6 = $(this).data('ipv6').toString() === 'true';
+        
+        var matchesSearch = policyName.includes(searchText);
+        var matchesProtocol = protocolFilter === 'all' || protocols.includes(protocolFilter);
+        var matchesIpVersion = ipVersionFilter === 'all' || 
+                               (ipVersionFilter === 'ipv6' && isIpv6) || 
+                               (ipVersionFilter === 'ipv4' && !isIpv6);
+        
+        if (matchesSearch && matchesProtocol && matchesIpVersion) {
+            $(this).show();
+        } else {
+            $(this).hide();
+        }
+    });
+}
+
+function editPolicy(policyId) {
+    // 정책 데이터를 모달에 표시
+    $('#edit-policy-id').val(policyId);
+    
+    // 해당 정책의 데이터를 모달에 채우기
+    var $policyCard = $('.policy-item').filter(function() {
+        return $(this).find('.badge-policy-id').text().trim() === policyId;
+    });
+    
+    if ($policyCard.length) {
+        // 정책 이름
+        $('#edit-policy-name').val($policyCard.data('name'));
+        
+        // 추가 데이터 로드 로직...
+    }
+    
+    // 모달 표시
+    var policyEditModal = new bootstrap.Modal(document.getElementById('policyEditModal'));
+    policyEditModal.show();
+}
+
+function savePolicyChanges() {
+    // 변경된 정책 데이터를 서버로 전송
+    alert('정책이 저장되었습니다.');
+    
+    // 모달 닫기
+    var policyEditModal = bootstrap.Modal.getInstance(document.getElementById('policyEditModal'));
+    policyEditModal.hide();
+}
+</script>
+{% endblock %}

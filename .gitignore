@@ -1,0 +1,27 @@
+# 빌드 결과물
+/build/
+/dist/
+
+# OS 관련 파일
+.DS_Store
+Thumbs.db
+
+# IDE 설정 파일
+.idea/
+.vscode/
+
+# venv 관련
+venv/
+
+# 사용자인증 관련
+ssl/
+users.json
+
+# 본석 결과파일
+static/output
+
+# 임시 파일
+*.log
+policy_recommendations/
+__pycache__/
+flask_sessions/

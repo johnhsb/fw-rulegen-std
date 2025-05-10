@@ -1,0 +1,316 @@
+{% extends "base.html" %}
+
+{% block title %}시스템 설정 - 방화벽 정책 추천 시스템{% endblock %}
+
+{% block head %}
+<style>
+    .settings-card {
+        margin-bottom: 20px;
+    }
+    .settings-section {
+        padding: 15px;
+        background-color: #1a1a1a;
+        border-radius: 5px;
+        margin-bottom: 15px;
+        border: 1px solid #333;
+    }
+    .setting-title {
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #e0e0e0;
+    }
+    .alert-info {
+        background-color: #053646;
+        border-color: #053646;
+        color: #d1ecf1;
+    }
+    .alert-warning {
+        background-color: #664d03;
+        border-color: #664d03;
+        color: #fff3cd;
+    }
+    #settingsSavedAlert {
+        background-color: #051b11;
+        border-color: #0f5132;
+        color: #75b798;
+    }
+    /* 테이블 스타일 - 다크모드 완전 적용 */
+    .table {
+        color: #e0e0e0;
+    }
+    
+    /* 테이블 헤더 셀(th) 스타일 - row 헤더용 */
+    .table th {
+        background-color: #2d2d2d !important;
+        color: #e0e0e0 !important;
+        border-color: #444 !important;
+        font-weight: 600;
+    }
+    
+    /* 테이블 데이터 셀(td) 스타일 */
+    .table td {
+        background-color: #1e1e1e !important;
+        color: #e0e0e0 !important;
+        border-color: #444 !important;
+    }
+    /* 작은 테이블 스타일 오버라이드 */
+    .table-sm th,
+    .table-sm td {
+        padding: 0.5rem;
+    }
+    .form-text {
+        color: #adb5bd;
+    }
+    .btn-outline-danger {
+        color: #dc3545;
+        border-color: #dc3545;
+    }
+    .btn-outline-danger:hover {
+        color: #fff;
+        background-color: #dc3545;
+        border-color: #dc3545;
+    }
+
+    .btn-secondary {
+        background-color: #495057;
+        border-color: #495057;
+    }
+    .btn-secondary:hover {
+        background-color: #5a6268;
+        border-color: #545b62;
+    }
+    
+    #settingsSavedAlert {
+        background-color: #0f5132;
+        border-color: #0f5132;
+        color: #d1ecf1;
+    }
+    
+    .form-control:disabled,
+    .form-select:disabled {
+        background-color: #1a1a1a;
+        color: #6c757d;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>시스템 설정</h2>
+
+<div class="alert alert-success alert-dismissible fade show" role="alert" id="settingsSavedAlert" style="display: none;">
+    <strong>성공!</strong> 설정이 성공적으로 저장되었습니다.
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+
+<form id="settingsForm">
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="card settings-card">
+                <div class="card-header">
+                    <h5 class="mb-0">DBSCAN 클러스터링 파라미터</h5>
+                </div>
+                <div class="card-body">
+                    <div class="settings-section">
+                        <div class="setting-title">클러스터링 기본 설정</div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="min_occurrences" class="form-label">최소 발생 횟수</label>
+                                <input type="number" class="form-control" id="min_occurrences" name="min_occurrences" value="{{ dbscan_params.min_occurrences }}" min="1">
+                                <div class="form-text">분석에 포함할 트래픽의 최소 발생 횟수</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="max_data_points" class="form-label">최대 데이터 포인트</label>
+                                <input type="number" class="form-control" id="max_data_points" name="max_data_points" value="{{ dbscan_params.max_data_points }}" min="1000">
+                                <div class="form-text">클러스터링에 사용할 최대 데이터 포인트 수</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <div class="setting-title">DBSCAN 알고리즘 파라미터</div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="eps" class="form-label">Epsilon 값 (eps)</label>
+                                <input type="number" class="form-control" id="eps" name="eps" value="{{ dbscan_params.eps }}" min="0.1" step="0.1">
+                                <div class="form-text">클러스터 간 최대 거리 (낮을수록 엄격)</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="min_samples" class="form-label">최소 샘플 수</label>
+                                <input type="number" class="form-control" id="min_samples" name="min_samples" value="{{ dbscan_params.min_samples }}" min="1">
+                                <div class="form-text">클러스터 형성에 필요한 최소 포인트 수</div>
+                            </div>
+                        </div>
+                        <div class="alert alert-warning mt-3">
+                            <i class="bi bi-exclamation-triangle"></i> 이 값을 변경하면 동일한 데이터에 대해서도 다른 클러스터링 결과가 나올 수 있습니다.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-6">
+            <div class="card settings-card">
+                <div class="card-header">
+                    <h5 class="mb-0">파일 저장 설정</h5>
+                </div>
+                <div class="card-body">
+                    <div class="settings-section">
+                        <div class="setting-title">디렉토리 설정</div>
+                        <div class="mb-3">
+                            <label for="output_dir" class="form-label">출력 디렉토리</label>
+                            <input type="text" class="form-control" id="output_dir" name="output_dir" value="{{ output_dir }}">
+                            <div class="form-text">분석 결과 및 시각화 파일이 저장될 디렉토리</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="logs_dir" class="form-label">로그 디렉토리</label>
+                            <input type="text" class="form-control" id="logs_dir" name="logs_dir" value="logs">
+                            <div class="form-text">Syslog로 수집된 로그 파일이 저장될 디렉토리</div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <div class="setting-title">데이터 관리</div>
+                        <div class="mb-3">
+                            <label for="retention_days" class="form-label">데이터 보관 일수</label>
+                            <input type="number" class="form-control" id="retention_days" name="retention_days" value="30" min="1">
+                            <div class="form-text">오래된 로그 및 분석 결과를 자동으로 삭제할 기간 (일)</div>
+                        </div>
+                        <div class="d-grid gap-2 mt-4">
+                            <button type="button" class="btn btn-outline-danger" id="cleanupBtn">
+                                <i class="bi bi-trash"></i> 오래된 데이터 정리
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card settings-card">
+                <div class="card-header">
+                    <h5 class="mb-0">시스템 정보</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm table-dark">
+                        <tbody>
+                            <tr>
+                                <th scope="row">시스템 버전</th>
+                                <td>1.0.0</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Python 버전</th>
+                                <td>3.8.10</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">디스크 사용량</th>
+                                <td><span id="diskUsage">계산 중...</span></td>
+                            </tr>
+                            <tr>
+                                <th scope="row">메모리 사용량</th>
+                                <td><span id="memoryUsage">계산 중...</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card mt-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between">
+                <button type="reset" class="btn btn-secondary">
+                    <i class="bi bi-arrow-counterclockwise"></i> 초기화
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save"></i> 설정 저장
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // 설정 폼 제출 처리
+    $('#settingsForm').submit(function(e) {
+        e.preventDefault();
+        
+        var formData = $(this).serialize();
+        
+        $.ajax({
+            url: '/settings',
+            type: 'POST',
+            data: formData,
+            success: function(response) {
+                if (response.success) {
+                    // 성공 알림 표시
+                    $('#settingsSavedAlert').show();
+                    
+                    // 3초 후 알림 숨기기
+                    setTimeout(function() {
+                        $('#settingsSavedAlert').fadeOut();
+                    }, 3000);
+                } else {
+                    alert('설정 저장에 실패했습니다.');
+                }
+            },
+            error: function(xhr) {
+                var errorMsg = '설정 저장 중 오류가 발생했습니다.';
+                if (xhr.responseJSON && xhr.responseJSON.error) {
+                    errorMsg = xhr.responseJSON.error;
+                }
+                alert(errorMsg);
+            }
+        });
+    });
+    
+    // 오래된 데이터 정리 버튼 클릭 이벤트
+    $('#cleanupBtn').on('click', function() {
+        if (confirm('설정된 보관 일수보다 오래된 모든 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+            // 데이터 정리 API 호출
+            $.ajax({
+                url: '/api/cleanup',
+                type: 'POST',
+                data: {
+                    retention_days: $('#retention_days').val()
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.message || '데이터 정리가 완료되었습니다.');
+                    } else {
+                        alert('데이터 정리에 실패했습니다.');
+                    }
+                },
+                error: function() {
+                    alert('데이터 정리 중 오류가 발생했습니다.');
+                }
+            });
+        }
+    });
+    
+    // 시스템 정보 로드
+    loadSystemInfo();
+});
+
+function loadSystemInfo() {
+    // 서버에서 시스템 정보를 가져옴
+    $.ajax({
+        url: '/api/system_info',
+        type: 'GET',
+        success: function(response) {
+            if (response.disk_usage) {
+                $('#diskUsage').text(response.disk_usage);
+            }
+            if (response.memory_usage) {
+                $('#memoryUsage').text(response.memory_usage);
+            }
+        },
+        error: function() {
+            $('#diskUsage').text('정보를 가져올 수 없음');
+            $('#memoryUsage').text('정보를 가져올 수 없음');
+        }
+    });
+}
+</script>
+{% endblock %}

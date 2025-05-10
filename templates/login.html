@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}로그인 - 방화벽 정책 추천 시스템{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+        <div class="card shadow mt-5">
+            <div class="card-header">
+                <h4 class="mb-0 text-center">로그인</h4>
+            </div>
+            <div class="card-body p-4">
+                {% if error %}
+                <div class="alert alert-danger" role="alert">
+                    {{ error }}
+                </div>
+                {% endif %}
+                <form method="post" action="{{ url_for('login') }}">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">사용자 이름</label>
+                        <input type="text" class="form-control" id="username" name="username" required autofocus>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">비밀번호</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">로그인</button>
+                    </div>
+                </form>
+            </div>
+            <div class="card-footer text-center">
+                <small>방화벽 정책 추천 시스템에 접근하려면 로그인하세요.</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 페이지 로드 시 사용자 이름 필드에 포커스
+    document.getElementById('username').focus();
+});
+</script>
+{% endblock %}

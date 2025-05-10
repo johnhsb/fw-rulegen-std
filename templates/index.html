@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+
+{% block title %}대시보드 - 방화벽 정책 추천 시스템{% endblock %}
+
+{% block head %}
+<style>
+    /* 탭 스타일 다크모드 추가 */
+    .nav-tabs {
+        border-bottom: 1px solid #333;
+    }
+    .nav-tabs .nav-link {
+        color: #adb5bd;
+        border: 1px solid transparent;
+    }
+    .nav-tabs .nav-link:hover {
+        border-color: #333 #333 #121212;
+    }
+    .nav-tabs .nav-link.active {
+        color: #e0e0e0;
+        background-color: #1e1e1e;
+        border-color: #333 #333 #1e1e1e;
+    }
+    
+    /* 탭 컨텐츠 배경색 */
+    .tab-content {
+        background-color: #1e1e1e;
+        border: 1px solid #333;
+        border-top: none;
+    }
+
+    .table thead th {
+        background-color: #2d2d2d !important;
+        color: #e0e0e0 !important;
+        border-color: #444 !important;
+        font-weight: 600;
+    }
+    
+    .table td {
+        color: #e0e0e0;
+    }
+
+    /* 테이블 다크 모드 오버라이드 */
+    .table-dark thead tr th {
+        background-color: #212529 !important;
+        color: #fff !important;
+        border-color: #495057 !important;
+    }
+    
+    /* 테이블 스트라이프 행 스타일 */
+    .table-striped > tbody > tr:nth-of-type(odd) > * {
+        background-color: #1a1a1a;
+    }
+    
+    /* 테이블 호버 스타일 */
+    .table-hover > tbody > tr:hover > * {
+        background-color: #2a2a2a;
+    }
+    
+    /* 배지 색상 조정 */
+    .badge {
+        padding: 0.35em 0.65em;
+    }
+    
+    /* 카드 내부 패딩 조정 */
+    .card-body {
+        background-color: #1e1e1e;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>대시보드</h2>
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">트래픽 분석 결과</h5>
+            </div>
+            <div class="card-body p-0">
+                <ul class="nav nav-tabs nav-justified" id="analysisTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="manual-tab" data-bs-toggle="tab" data-bs-target="#manual" type="button" role="tab">수동 업로드</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="syslog-tab" data-bs-toggle="tab" data-bs-target="#syslog" type="button" role="tab">Syslog</button>
+                    </li>
+                </ul>
+                <div class="tab-content p-3" id="analysisTabsContent">
+                    <div class="tab-pane fade show active" id="manual" role="tabpanel">
+                        {% if manual_analyses %}
+                        <div class="table-responsive">
+                            <table class="table table-dark table-striped table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">날짜</th>
+                                        <th scope="col">시간</th>
+                                        <th scope="col">정책 수</th>
+                                        <th scope="col">작업</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for analysis in manual_analyses %}
+                                    <tr>
+                                        <td class="text-light">{{ analysis.date[:4] }}-{{ analysis.date[4:6] }}-{{ analysis.date[6:] }}</td>
+                                        <td class="text-light">{{ analysis.time[:2] }}:{{ analysis.time[2:4] }}:{{ analysis.time[4:] }}</td>
+                                        <td class="text-light">{{ analysis.policies_count }}</td>
+                                        <td>
+                                            <a href="/analyze?timestamp={{ analysis.timestamp }}" class="btn btn-sm btn-primary">결과 보기</a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info mb-0">아직 수동 분석 결과가 없습니다.</div>
+                        {% endif %}
+                    </div>
+                    <div class="tab-pane fade" id="syslog" role="tabpanel">
+                        {% if syslog_analyses %}
+                        <div class="table-responsive">
+                            <table class="table table-dark table-striped table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">날짜</th>
+                                        <th scope="col">시간</th>
+                                        <th scope="col">정책 수</th>
+                                        <th scope="col">작업</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for analysis in syslog_analyses %}
+                                    <tr>
+                                        <td class="text-light">{{ analysis.date[:4] }}-{{ analysis.date[4:6] }}-{{ analysis.date[6:] }}</td>
+                                        <td class="text-light">{{ analysis.time[:2] }}:{{ analysis.time[2:4] }}:{{ analysis.time[4:] }}</td>
+                                        <td class="text-light">{{ analysis.policies_count }}</td>
+                                        <td>
+                                            <a href="/analyze?timestamp={{ analysis.timestamp }}" class="btn btn-sm btn-primary">결과 보기</a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info mb-0">아직 Syslog 분석 결과가 없습니다.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">수집된 로그 파일</h5>
+            </div>
+            <div class="card-body p-0">
+                <ul class="nav nav-tabs nav-justified" id="logsTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="manual-logs-tab" data-bs-toggle="tab" data-bs-target="#manual-logs" type="button" role="tab">수동 업로드</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="syslog-logs-tab" data-bs-toggle="tab" data-bs-target="#syslog-logs" type="button" role="tab">Syslog</button>
+                    </li>
+                </ul>
+                <div class="tab-content p-3" id="logsTabsContent">
+                    <div class="tab-pane fade show active" id="manual-logs" role="tabpanel">
+                        {% if manual_logs %}
+                        <div class="table-responsive">
+                            <table class="table table-dark table-striped table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">파일명</th>
+                                        <th scope="col">크기</th>
+                                        <th scope="col">수정일</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for log in manual_logs %}
+                                    <tr>
+                                        <td class="text-light">{{ log.filename }}</td>
+                                        <td class="text-light">{{ (log.size / 1024)|round(1) }} KB</td>
+                                        <td class="text-light">{{ log.modified.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info mb-0">아직 업로드된 로그 파일이 없습니다.</div>
+                        {% endif %}
+                    </div>
+                    <div class="tab-pane fade" id="syslog-logs" role="tabpanel">
+                        {% if syslog_logs %}
+                        <div class="table-responsive">
+                            <table class="table table-dark table-striped table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">파일명</th>
+                                        <th scope="col">크기</th>
+                                        <th scope="col">수정일</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for log in syslog_logs %}
+                                    <tr>
+                                        <td class="text-light">{{ log.filename }}</td>
+                                        <td class="text-light">{{ (log.size / 1024)|round(1) }} KB</td>
+                                        <td class="text-light">{{ log.modified.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info mb-0">아직 Syslog 로그 파일이 없습니다.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">시스템 상태</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-3">
+                    <span>Syslog 서버:</span>
+                    <span class="badge {% if is_syslog_running %}bg-success{% else %}bg-secondary{% endif %}">
+                        {% if is_syslog_running %}실행 중{% else %}중지됨{% endif %}
+                    </span>
+                </div>
+                <div class="d-flex justify-content-around mt-4">
+                    <a href="/upload" class="btn btn-primary">로그 업로드</a>
+                    <a href="/syslog" class="btn btn-primary">Syslog 관리</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">활동 요약</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span>수동 분석 결과:</span>
+                        <span class="fw-bold text-light">{{ manual_analyses|length }}</span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span>Syslog 분석 결과:</span>
+                        <span class="fw-bold text-light">{{ syslog_analyses|length }}</span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span>업로드 파일:</span>
+                        <span class="fw-bold text-light">{{ manual_logs|length }}</span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span>Syslog 수집 파일:</span>
+                        <span class="fw-bold text-light">{{ syslog_logs|length }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

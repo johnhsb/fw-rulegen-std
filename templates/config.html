@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}방화벽 설정 - 방화벽 정책 추천 시스템{% endblock %}
+
+{% block head %}
+<style>
+    .config-toolbar {
+        margin-bottom: 15px;
+    }
+    .config-editor {
+        min-height: 600px;
+        font-family: monospace;
+        white-space: pre;
+        overflow-x: auto;
+    }
+    .config-tabs {
+        margin-bottom: 15px;
+    }
+    #configArea {
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    .highlight {
+        background-color: #ffff99;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>방화벽 설정</h2>
+
+{% if timestamp %}
+<div class="alert alert-info">
+    분석 결과: {{ timestamp[:8] }} {{ timestamp[9:11] }}:{{ timestamp[11:13] }}:{{ timestamp[13:15] }}
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">주니퍼 방화벽 설정</h5>
+    </div>
+    <div class="card-body">
+        <div class="config-toolbar d-flex justify-content-between">
+            <div>
+                <button class="btn btn-outline-primary btn-sm" id="copyConfig">
+                    <i class="bi bi-clipboard"></i> 클립보드 복사
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" id="downloadConfig">
+                    <i class="bi bi-download"></i> 다운로드
+                </button>
+            </div>
+            <div class="input-group" style="width: 300px;">
+                <input type="text" class="form-control form-control-sm" id="searchConfig" placeholder="설정 검색...">
+                <button class="btn btn-outline-secondary btn-sm" id="searchBtn">
+                    <i class="bi bi-search"></i> 검색
+                </button>
+            </div>
+        </div>
+        
+        <div class="config-tabs">
+            <ul class="nav nav-tabs" id="configTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="ipv4-tab" data-bs-toggle="tab" data-bs-target="#ipv4" type="button" role="tab">IPv4 설정</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="ipv6-tab" data-bs-toggle="tab" data-bs-target="#ipv6" type="button" role="tab">IPv6 설정</button>
+                </li>
+            </ul>
+        </div>
+        
+        <div class="tab-content" id="configTabsContent">
+            <div class="tab-pane fade show active" id="ipv4" role="tabpanel">
+                <div class="config-editor">
+                    <pre id="configArea" class="border p-3">{{ config if config else '# 생성된 설정이 없습니다.\n# 먼저 로그 분석 후 정책 추천을 진행하세요.' }}</pre>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="ipv6" role="tabpanel">
+                <div class="config-editor">
+                    <pre id="ipv6ConfigArea" class="border p-3"># IPv6 설정 내용은 추후 추가될 예정입니다.</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card-footer">
+        <div class="d-flex justify-content-between">
+            <a href="/policies{% if timestamp %}?timestamp={{ timestamp }}{% endif %}" class="btn btn-secondary">정책 목록으로 돌아가기</a>
+            <a href="javascript:void(0)" class="btn btn-success" id="downloadConfigBtn">설정 다운로드</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // 클립보드 복사 기능
+    $('#copyConfig').on('click', function() {
+        var configText = $('#configArea').text();
+        if (configText.trim() !== '') {
+            navigator.clipboard.writeText(configText).then(function() {
+                showToast('설정이 클립보드에 복사되었습니다.');
+            }, function() {
+                showToast('클립보드 복사에 실패했습니다.', 'error');
+            });
+        }
+    });
+    
+    // 설정 다운로드 기능
+    $('#downloadConfig, #downloadConfigBtn').on('click', function() {
+        var configText = $('#configArea').text();
+        if (configText.trim() !== '' && configText.indexOf('생성된 설정이 없습니다') === -1) {
+            var blob = new Blob([configText], { type: 'text/plain' });
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'juniper_firewall_config_{{ timestamp if timestamp else "current" }}.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } else {
+            showToast('다운로드할 설정이 없습니다.', 'error');
+        }
+    });
+    
+    // 설정 검색 기능
+    $('#searchBtn').on('click', function() {
+        searchInConfig();
+    });
+    
+    $('#searchConfig').on('keypress', function(e) {
+        if (e.which === 13) {
+            searchInConfig();
+        }
+    });
+    
+    // 탭 간 전환 시 하이라이트 초기화
+    $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function() {
+        $('.highlight').removeClass('highlight');
+        $('#searchConfig').val('');
+    });
+});
+
+function searchInConfig() {
+    var searchText = $('#searchConfig').val();
+    
+    if (searchText.trim() === '') {
+        return;
+    }
+    
+    var activeTabId = $('.tab-pane.active').attr('id');
+    var configAreaId = activeTabId === 'ipv4' ? 'configArea' : 'ipv6ConfigArea';
+    var configArea = document.getElementById(configAreaId);
+    
+    // 이전 하이라이트 제거
+    $('.highlight').removeClass('highlight');
+    
+    if (!configArea || configArea.textContent.trim() === '' || 
+        configArea.textContent.indexOf('생성된 설정이 없습니다') !== -1) {
+        showToast('검색할 내용이 없습니다.', 'error');
+        return;
+    }
+    
+    // 텍스트 노드 내에서 검색 및 하이라이트 (단순화된 방법)
+    var html = configArea.innerHTML;
+    var index = html.toLowerCase().indexOf(searchText.toLowerCase());
+    
+    if (index !== -1) {
+        // 매치된 텍스트 주변에 스팬 추가
+        var matchedText = html.substr(index, searchText.length);
+        var newHtml = html.replace(
+            matchedText,
+            '<span class="highlight">' + matchedText + '</span>'
+        );
+        configArea.innerHTML = newHtml;
+        
+        // 하이라이트된 부분으로 스크롤
+        var highlightElem = configArea.querySelector('.highlight');
+        if (highlightElem) {
+            highlightElem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    } else {
+        showToast('검색 결과가 없습니다.', 'warning');
+    }
+}
+
+function showToast(message, type = 'success') {
+    // 토스트 메시지 표시 (부트스트랩 토스트 또는 커스텀 알림)
+    alert(message);
+}
+</script>
+{% endblock %}

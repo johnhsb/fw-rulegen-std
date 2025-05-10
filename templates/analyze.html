@@ -1,0 +1,530 @@
+{% extends "base.html" %}
+
+{% block title %}로그 분석 - 방화벽 정책 추천 시스템{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/daterangepicker.css">
+<style>
+    .filter-section {
+        background-color: #1e1e1e;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 15px;
+        border: 1px solid #333;
+    }
+    .result-tabs {
+        margin-top: 20px;
+    }
+    #loadingOverlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.8);
+        z-index: 9999;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+    }
+    #loadingSpinner {
+        width: 80px;
+        height: 80px;
+    }
+    #loadingText {
+        color: white;
+        margin-top: 15px;
+        font-size: 18px;
+    }
+    .nav-tabs .nav-link {
+        color: #adb5bd;
+        border-color: #333;
+    }
+    .nav-tabs .nav-link.active {
+        color: #e0e0e0;
+        background-color: #1e1e1e;
+        border-color: #333 #333 #1e1e1e;
+    }
+    .nav-tabs .nav-link:hover {
+        border-color: #555;
+    }
+    .embed-responsive iframe {
+        background-color: #121212;
+    }
+
+    .daterangepicker {
+        background-color: #1e1e1e;
+        border: 1px solid #333;
+        color: #e0e0e0;
+    }
+    .daterangepicker .calendar-table {
+        background-color: #1e1e1e;
+        border: 1px solid #333;
+    }
+    .daterangepicker td.active, .daterangepicker td.active:hover {
+        background-color: #0d6efd;
+        color: #fff;
+    }
+    .daterangepicker td.available:hover {
+        background-color: #2d2d2d;
+    }
+    .daterangepicker .drp-buttons {
+        border-top: 1px solid #333;
+    }
+    .daterangepicker .btn-default {
+        background-color: #2d2d2d;
+        border-color: #333;
+        color: #e0e0e0;
+    }
+    .daterangepicker select.hourselect,
+    .daterangepicker select.minuteselect,
+    .daterangepicker select.secondselect,
+    .daterangepicker select.ampmselect {
+        background-color: #2d2d2d;
+        border-color: #333;
+        color: #e0e0e0;
+    }
+    
+    .table thead th {
+        background-color: #2d2d2d;
+        color: #e0e0e0;
+        border-color: #444;
+    }
+    
+    .embed-responsive {
+        background-color: #121212;
+        min-height: 1000px;
+    }
+
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 로딩 오버레이 -->
+<div id="loadingOverlay" class="d-none">
+    <div id="loadingSpinner" class="spinner-border text-light" role="status">
+        <span class="visually-hidden">로딩 중...</span>
+    </div>
+    <div id="loadingText">분석 중입니다. 잠시만 기다려주세요...</div>
+</div>
+
+<h2>로그 분석</h2>
+
+{% if timestamp %}
+    <div class="alert alert-info">
+        분석 결과: {{ timestamp[:8] }} {{ timestamp[9:11] }}:{{ timestamp[11:13] }}:{{ timestamp[13:15] }}
+    </div>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">분석 필터</h5>
+    </div>
+    <div class="card-body">
+        <form id="analyzeForm" method="post">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="filter-section">
+                        <h6>기본 필터</h6>
+                        <div class="mb-3">
+                            <label for="date-range" class="form-label">날짜 범위</label>
+                            <input type="text" class="form-control" id="date-range" name="date_range">
+                            <input type="hidden" id="start_date" name="start_date">
+                            <input type="hidden" id="end_date" name="end_date">
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="exclude_noise" name="exclude_noise" value="1">
+                            <label class="form-check-label" for="exclude_noise">
+                                노이즈 데이터 제외
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-section">
+                        <h6>IP 필터</h6>
+                        <div class="mb-3">
+                            <label for="source_ip_filter" class="form-label">출발지 IP</label>
+                            <div class="input-group">
+                                <select class="form-select" name="source_ip_filter_type" id="source_ip_filter_type" style="max-width: 120px;">
+                                    <option value="include">포함</option>
+                                    <option value="exclude">제외</option>
+                                </select>
+                                <input type="text" class="form-control" id="source_ip_filter" name="source_ip_filter" placeholder="예: 192.168.1.0/24,10.0.0.1">
+                            </div>
+                            <div class="form-text">쉼표로 구분된 IP 또는 서브넷</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="destination_ip_filter" class="form-label">목적지 IP</label>
+                            <div class="input-group">
+                                <select class="form-select" name="destination_ip_filter_type" id="destination_ip_filter_type" style="max-width: 120px;">
+                                    <option value="include">포함</option>
+                                    <option value="exclude">제외</option>
+                                </select>
+                                <input type="text" class="form-control" id="destination_ip_filter" name="destination_ip_filter" placeholder="예: 8.8.8.8,1.1.1.1">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="filter-section">
+                        <h6>네트워크 필터</h6>
+                        <div class="mb-3">
+                            <label for="port_filter" class="form-label">포트</label>
+                            <div class="input-group">
+                                <select class="form-select" name="port_filter_type" id="port_filter_type" style="max-width: 120px;">
+                                    <option value="include">포함</option>
+                                    <option value="exclude">제외</option>
+                                </select>
+                                <input type="text" class="form-control" id="port_filter" name="port_filter" placeholder="예: 80,443,8080-8090">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="protocol_filter" class="form-label">프로토콜</label>
+                            <div class="input-group">
+                                <select class="form-select" name="protocol_filter_type" id="protocol_filter_type" style="max-width: 120px;">
+                                    <option value="include">포함</option>
+                                    <option value="exclude">제외</option>
+                                </select>
+                                <input type="text" class="form-control" id="protocol_filter" name="protocol_filter" placeholder="예: tcp,udp,icmp">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-section">
+                        <h6>존 및 장비 필터</h6>
+                        <div class="mb-3">
+                            <label for="source_zone_filter" class="form-label">출발지 존</label>
+                            <div class="input-group">
+                                <select class="form-select" name="source_zone_filter_type" id="source_zone_filter_type" style="max-width: 120px;">
+                                    <option value="include">포함</option>
+                                    <option value="exclude">제외</option>
+                                </select>
+                                <input type="text" class="form-control" id="source_zone_filter" name="source_zone_filter" placeholder="예: trust,dmz">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="destination_zone_filter" class="form-label">목적지 존</label>
+                            <div class="input-group">
+                                <select class="form-select" name="destination_zone_filter_type" id="destination_zone_filter_type" style="max-width: 120px;">
+                                    <option value="include">포함</option>
+                                    <option value="exclude">제외</option>
+                                </select>
+                                <input type="text" class="form-control" id="destination_zone_filter" name="destination_zone_filter" placeholder="예: untrust,internet">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="device_name_filter" class="form-label">장비명</label>
+                            <div class="input-group">
+                                <select class="form-select" name="device_name_filter_type" id="device_name_filter_type" style="max-width: 120px;">
+                                    <option value="include">포함</option>
+                                    <option value="exclude">제외</option>
+                                </select>
+                                <input type="text" class="form-control" id="device_name_filter" name="device_name_filter" placeholder="예: fw-01,fw-02">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <div class="filter-section">
+                        <h6>클러스터링 파라미터</h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="min_occurrences" class="form-label">최소 발생 횟수</label>
+                                <input type="number" class="form-control" id="min_occurrences" name="min_occurrences" min="1" value="{{ params.min_occurrences }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="eps" class="form-label">클러스터 거리 (eps)</label>
+                                <input type="number" class="form-control" id="eps" name="eps" min="0.1" step="0.1" value="{{ params.eps }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="min_samples" class="form-label">최소 샘플 수</label>
+                                <input type="number" class="form-control" id="min_samples" name="min_samples" min="1" value="{{ params.min_samples }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="max_data_points" class="form-label">최대 데이터 포인트</label>
+                                <input type="number" class="form-control" id="max_data_points" name="max_data_points" min="1000" value="{{ params.max_data_points }}">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="filter-section">
+                        <h6>트래픽 패턴 분석</h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="top_n" class="form-label">상위 트래픽 패턴 수</label>
+                                <input type="number" class="form-control" id="top_n" name="top_n" min="5" max="100" value="30">
+                            </div>
+                        </div>
+                        <div class="d-grid gap-2 mt-3">
+                            <button type="submit" class="btn btn-primary btn-lg" id="startAnalysisBtn">분석 시작</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if timestamp %}
+<div class="result-tabs">
+    <ul class="nav nav-tabs" id="resultTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="traffic-tab" data-bs-toggle="tab" data-bs-target="#traffic" type="button" role="tab">상위 트래픽 패턴</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="sankey-tab" data-bs-toggle="tab" data-bs-target="#sankey" type="button" role="tab">트래픽 흐름 다이어그램</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="viz3d-tab" data-bs-toggle="tab" data-bs-target="#viz3d" type="button" role="tab">3D 트래픽 시각화</button>
+        </li>
+    </ul>
+    <div class="tab-content" id="resultTabsContent">
+        <div class="tab-pane fade show active" id="traffic" role="tabpanel">
+            <div class="card mt-3">
+                <div class="card-header">
+                    <ul class="nav nav-tabs card-header-tabs" id="ipVersionTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="ipv4-traffic-tab" data-bs-toggle="tab" data-bs-target="#ipv4-traffic" type="button" role="tab">IPv4 트래픽</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="ipv6-traffic-tab" data-bs-toggle="tab" data-bs-target="#ipv6-traffic" type="button" role="tab">IPv6 트래픽</button>
+                        </li>
+                    </ul>
+                </div>
+                <div class="card-body">
+                    <div class="tab-content" id="ipVersionTabsContent">
+                        <div class="tab-pane fade show active" id="ipv4-traffic" role="tabpanel">
+                            <div class="table-responsive">
+                                <table class="table table-dark table-striped table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>출발지 서브넷</th>
+                                            <th>목적지 IP</th>
+                                            <th>포트 정보</th>
+                                            <th>발생 횟수</th>
+                                            <th>비율</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="ipv4-traffic-body">
+                                        <!-- 테이블 내용은 Ajax로 로드 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-3">
+                                <a href="/policies?timestamp={{ timestamp }}" class="btn btn-success">정책 생성</a>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="ipv6-traffic" role="tabpanel">
+                            <div class="table-responsive">
+                                <table class="table table-dark table-striped table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>출발지 서브넷</th>
+                                            <th>목적지 IP</th>
+                                            <th>포트 정보</th>
+                                            <th>발생 횟수</th>
+                                            <th>비율</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="ipv6-traffic-body">
+                                        <!-- 테이블 내용은 Ajax로 로드 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-3">
+                                <a href="/policies?timestamp={{ timestamp }}" class="btn btn-success">정책 생성</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="sankey" role="tabpanel">
+            <div class="card mt-3">
+                <div class="card-header">
+                    <ul class="nav nav-tabs card-header-tabs" id="sankey-version-tabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="ipv4-sankey-tab" data-bs-toggle="tab" data-bs-target="#ipv4-sankey" type="button" role="tab">IPv4 트래픽 흐름</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="ipv6-sankey-tab" data-bs-toggle="tab" data-bs-target="#ipv6-sankey" type="button" role="tab">IPv6 트래픽 흐름</button>
+                        </li>
+                    </ul>
+                </div>
+                <div class="card-body">
+                    <div class="tab-content" id="sankeyTabsContent">
+                        <div class="tab-pane fade show active" id="ipv4-sankey" role="tabpanel">
+                            <div class="embed-responsive">
+                                <iframe id="ipv4-sankey-iframe" style="width: 100%; height: 1000px; border: none;"></iframe>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="ipv6-sankey" role="tabpanel">
+                            <div class="embed-responsive">
+                                <iframe id="ipv6-sankey-iframe" style="width: 100%; height: 1000px; border: none;"></iframe>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="viz3d" role="tabpanel">
+            <div class="card mt-3">
+                <div class="card-header">
+                    <ul class="nav nav-tabs card-header-tabs" id="viz3d-version-tabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="ipv4-viz3d-tab" data-bs-toggle="tab" data-bs-target="#ipv4-viz3d" type="button" role="tab">IPv4 3D 시각화</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="ipv6-viz3d-tab" data-bs-toggle="tab" data-bs-target="#ipv6-viz3d" type="button" role="tab">IPv6 3D 시각화</button>
+                        </li>
+                    </ul>
+                </div>
+                <div class="card-body">
+                    <div class="tab-content" id="viz3dTabsContent">
+                        <div class="tab-pane fade show active" id="ipv4-viz3d" role="tabpanel">
+                            <div class="embed-responsive">
+                                <iframe id="ipv4-viz3d-iframe" style="width: 100%; height: 1000px; border: none;"></iframe>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="ipv6-viz3d" role="tabpanel">
+                            <div class="embed-responsive">
+                                <iframe id="ipv6-viz3d-iframe" style="width: 100%; height: 1000px; border: none;"></iframe>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/moment.min.js"></script>
+<script src="/static/js/daterangepicker.js"></script>
+<script>
+$(document).ready(function() {
+    // 날짜 범위 선택기 초기화
+    $('#date-range').daterangepicker({
+        locale: {
+            format: 'YYYY-MM-DD',
+            applyLabel: '적용',
+            cancelLabel: '취소',
+            customRangeLabel: '직접 선택'
+        },
+        theme: 'dark',
+        startDate: moment().subtract(7, 'days'),
+        endDate: moment(),
+        ranges: {
+            '오늘': [moment(), moment()],
+            '어제': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+            '최근 7일': [moment().subtract(6, 'days'), moment()],
+            '최근 30일': [moment().subtract(29, 'days'), moment()],
+            '이번 달': [moment().startOf('month'), moment().endOf('month')],
+            '지난 달': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')]
+        }
+    }, function(start, end) {
+        $('#start_date').val(start.format('YYYY-MM-DD'));
+        $('#end_date').val(end.format('YYYY-MM-DD'));
+    });
+    
+    // 초기 날짜 값 설정
+    $('#start_date').val(moment().subtract(7, 'days').format('YYYY-MM-DD'));
+    $('#end_date').val(moment().format('YYYY-MM-DD'));
+    
+    // 분석 폼 제출 처리
+    $('#analyzeForm').submit(function(e) {
+        e.preventDefault();
+        
+        // 로딩 오버레이 표시
+        $('#loadingOverlay').removeClass('d-none');
+        
+        $.ajax({
+            url: '/api/analyze',
+            type: 'POST',
+            data: $(this).serialize(),
+            success: function(response) {
+                // 성공 시 결과 페이지로 이동
+                window.location.href = '/analyze?timestamp=' + response.timestamp;
+            },
+            error: function(xhr) {
+                // 오류 처리
+                $('#loadingOverlay').addClass('d-none');
+                
+                var errorMsg = '분석 중 오류가 발생했습니다.';
+                if (xhr.responseJSON && xhr.responseJSON.error) {
+                    errorMsg = xhr.responseJSON.error;
+                }
+                
+                alert(errorMsg);
+            }
+        });
+    });
+    
+    {% if timestamp %}
+    // 타임스탬프가 있으면 시각화 데이터 로드
+    loadVisualizationData('{{ timestamp }}');
+    {% endif %}
+});
+
+function loadVisualizationData(timestamp) {
+    // Sankey 다이어그램 URL 설정
+    $('#ipv4-sankey-iframe').attr('src', '/static/output/traffic_sankey_' + timestamp + '_ipv4.html');
+    $('#ipv6-sankey-iframe').attr('src', '/static/output/traffic_sankey_' + timestamp + '_ipv6.html');
+    
+    // 3D 시각화 URL 설정
+    $('#ipv4-viz3d-iframe').attr('src', '/static/output/traffic_3d_interactive_' + timestamp + '_ipv4.html');
+    $('#ipv6-viz3d-iframe').attr('src', '/static/output/traffic_3d_interactive_' + timestamp + '_ipv6.html');
+    
+    // 트래픽 데이터 로드
+    $.getJSON('/static/output/analysis_' + timestamp + '.json', function(data) {
+        if (data.top_traffic) {
+            // 트래픽 데이터를 IPv4와 IPv6로 분리
+            var ipv4Traffic = data.top_traffic.filter(function(item) {
+                return !item.src_subnet.includes(':');
+            });
+            
+            var ipv6Traffic = data.top_traffic.filter(function(item) {
+                return item.src_subnet.includes(':');
+            });
+            
+            // IPv4 트래픽 테이블 채우기
+            var ipv4Html = '';
+            ipv4Traffic.forEach(function(item) {
+                ipv4Html += '<tr>' +
+                    '<td>' + item.src_subnet + '</td>' +
+                    '<td>' + item.destination_ip + '</td>' +
+                    '<td>' + item.port_info + '</td>' +
+                    '<td>' + item.occurrence + '</td>' +
+                    '<td>' + item.percentage + '%</td>' +
+                    '</tr>';
+            });
+            $('#ipv4-traffic-body').html(ipv4Html || '<tr><td colspan="5" class="text-center">IPv4 트래픽 데이터가 없습니다.</td></tr>');
+            
+            // IPv6 트래픽 테이블 채우기
+            var ipv6Html = '';
+            ipv6Traffic.forEach(function(item) {
+                ipv6Html += '<tr>' +
+                    '<td>' + item.src_subnet + '</td>' +
+                    '<td>' + item.destination_ip + '</td>' +
+                    '<td>' + item.port_info + '</td>' +
+                    '<td>' + item.occurrence + '</td>' +
+                    '<td>' + item.percentage + '%</td>' +
+                    '</tr>';
+            });
+            $('#ipv6-traffic-body').html(ipv6Html || '<tr><td colspan="5" class="text-center">IPv6 트래픽 데이터가 없습니다.</td></tr>');
+        }
+    }).fail(function() {
+        alert('분석 데이터를 로드하는 중 오류가 발생했습니다.');
+    });
+}
+</script>
+{% endblock %}
