@@ -339,8 +339,9 @@ footer {
   position: fixed;
   bottom: 0;
   width: 100%;
-  background-color: var(--light-color);
-  color: var(--dark-color);
+  background-color: var(--dark-surface);    
+  border-top: 1px solid var(--dark-border);
+  color: var(--dark-text-secondary);
   text-align: center;
   padding: 1rem 0;
   box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);

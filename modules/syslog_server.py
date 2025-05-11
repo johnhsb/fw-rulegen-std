@@ -307,6 +307,15 @@ class SyslogServer:
             
             # 3D 인터랙티브 시각화
             viz_files = analyzer.visualize_traffic_patterns_3d_interactive(output_prefix + "_3d")
+
+            # 장비명 정보 수집
+            device_names = list(log_df['device_name'].unique()) if 'device_name' in log_df.columns else []
+        
+            # 로그 파일명만 추출 (경로 제외)
+            log_filenames = [os.path.basename(f) for f in log_files]
+        
+            # 필터 적용 여부 (Syslog 서버의 경우)
+            filters_applied = bool(self.device_filter or self.regex_filter)
             
             # 분석 결과 저장
             result = {
@@ -319,7 +328,18 @@ class SyslogServer:
                     'interactive_3d': viz_files
                 },
                 'source': 'syslog',
-                'log_files': log_files
+                'log_files': log_files,
+                'log_filenames': log_filenames,  # 파일명만
+                'device_names': device_names,  # 장비명 목록
+                'filters_applied': filters_applied,  # 필터 적용 여부
+                'total_log_records': len(log_df),  # 전체 로그 수
+                'filtered_log_records': len(log_df),  # 필터링 후 로그 수 (Syslog의 경우 동일)
+                'syslog_filters': {  # Syslog 특정 필터 정보
+                    'device_filter': self.device_filter,
+                    'device_filter_type': self.device_filter_type,
+                    'regex_filter': self.regex_filter,
+                    'regex_filter_type': self.regex_filter_type
+                }
             }
             
             # 결과 파일 저장

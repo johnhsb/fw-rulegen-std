@@ -213,6 +213,26 @@ def api_analyze_logs():
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         visualizations = create_visualizations(analyzer, timestamp)
 
+        # 장비명 정보 수집
+        device_names = list(filtered_df['device_name'].unique()) if 'device_name' in filtered_df.columns else []
+        
+        # 필터 적용 여부 확인
+        filters_applied = any([
+            filters.get('device_name_filter'),
+            filters.get('source_ip_filter'),
+            filters.get('destination_ip_filter'),
+            filters.get('port_filter'),
+            filters.get('protocol_filter'),
+            filters.get('source_zone_filter'),
+            filters.get('destination_zone_filter'),
+            filters.get('start_date'),
+            filters.get('end_date'),
+            filters.get('exclude_noise')
+        ])
+
+        # 로그 파일명만 추출 (경로 제외)
+        log_filenames = [os.path.basename(f) for f in uploaded_files]
+
         # 분석 결과 저장
         save_analysis_results(timestamp, {
             'params': params,
@@ -221,7 +241,13 @@ def api_analyze_logs():
             'config': config,
             'top_traffic': top_traffic_df.to_dict('records') if top_traffic_df is not None else [],
             'visualizations': visualizations,
-            'source': 'upload'
+            'source': 'upload',
+            'log_files': uploaded_files,  # 전체 경로
+            'log_filenames': log_filenames,  # 파일명만
+            'device_names': device_names,  # 장비명 목록
+            'filters_applied': filters_applied,  # 필터 적용 여부
+            'total_log_records': len(log_df),  # 전체 로그 수
+            'filtered_log_records': len(filtered_df)  # 필터링 후 로그 수
         })
 
         # 전역 상태 업데이트
@@ -479,7 +505,12 @@ def get_analyses_list(source_type):
                         'date': timestamp[:8],  # YYYYMMDD 부분
                         'time': timestamp[9:],  # HHMMSS 부분
                         'policies_count': len(data.get('policies', [])),
-                        'file_path': file_path
+                        'file_path': file_path,
+                        'log_filenames': data.get('log_filenames', []),
+                        'device_names': data.get('device_names', []),
+                        'filters_applied': data.get('filters_applied', False),
+                        'total_records': data.get('total_log_records', 0),
+                        'filtered_records': data.get('filtered_log_records', 0)
                     })
             except:
                 continue
