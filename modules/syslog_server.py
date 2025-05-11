@@ -25,7 +25,8 @@ class SyslogServer:
     
     def __init__(self, host='0.0.0.0', port=514, log_dir='./logs', 
                  analysis_interval=3600, output_dir='./output',
-                 device_filter='', device_filter_type='all'):
+                 device_filter='', device_filter_type='all',
+                 regex_filter='', regex_filter_type='include'):
         """
         초기화
         
@@ -37,6 +38,8 @@ class SyslogServer:
             output_dir (str): 분석 결과 저장 디렉토리
             device_filter (str): 장비명 필터
             device_filter_type (str): 필터 타입 ('include' 또는 'exclude')
+            regex_filter (str): 정규식 필터
+            regex_filter_type (str): 정규식 필터 타입 ('include' 또는 'exclude')
         """
         self.host = host
         self.port = port
@@ -45,6 +48,17 @@ class SyslogServer:
         self.analysis_interval = analysis_interval
         self.device_filter = device_filter.strip()
         self.device_filter_type = device_filter_type
+        self.regex_filter = regex_filter.strip()
+        self.regex_filter_type = regex_filter_type
+
+        # 정규식 패턴 컴파일 (성능 향상을 위해)
+        self.regex_pattern = None
+        if self.regex_filter:
+            try:
+                self.regex_pattern = re.compile(self.regex_filter)
+            except re.error as e:
+                logger.error(f"정규식 컴파일 오류: {e}")
+                self.regex_pattern = None
         
         # Syslog용 UDP 소켓
         self.sock = None
@@ -170,6 +184,19 @@ class SyslogServer:
             elif self.device_filter_type == 'include':
                 # 장비명이 없고 포함 필터인 경우 무시
                 return
+
+        # 정규식 필터 적용 (추가)
+        if self.regex_pattern:
+            match = self.regex_pattern.search(message)
+        
+            if self.regex_filter_type == 'include':
+                # 포함 필터: 정규식에 매치되는 것만 허용
+                if not match:
+                    return
+            elif self.regex_filter_type == 'exclude':
+                # 제외 필터: 정규식에 매치되는 것은 제외
+                if match:
+                    return
         
         # 날짜 확인
         today = datetime.now().strftime('%Y%m%d')

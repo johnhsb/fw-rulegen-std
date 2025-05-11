@@ -533,7 +533,7 @@ class TrafficAnalyzer:
             
             # 전체 트래픽 대비 비율 계산
             total_traffic = traffic_grouped['occurrence'].sum()
-            top_traffic['percentage'] = (top_traffic['occurrence'] / total_traffic * 100).round(2)
+            top_traffic['percentage'] = (top_traffic['occurrence'] / max(total_traffic, 1) * 100).round(2)
             
             # 소스 IP 개수 계산
             top_traffic['src_ip_count'] = top_traffic['source_ip'].apply(len)
@@ -908,18 +908,10 @@ class TrafficAnalyzer:
                 logger.info(f"IPv6 Sankey 다이어그램 저장 완료: {ipv6_result}")
         
         return file_info
+
     def visualize_traffic_patterns_3d_interactive(self, output_prefix='traffic_3d'):
         """
         트래픽 패턴을 3D 인터랙티브 시각화 (IPv4/IPv6 지원)
-        
-        출발지IP, 목적지IP, 목적지포트의 3차원 축에 DBSCAN으로 클러스터링된 3D 산점도
-        클러스터 크기는 트래픽 양에 비례하여 표현됨
-        
-        Args:
-            output_prefix (str): 출력 파일 접두사
-            
-        Returns:
-            dict: 생성된 파일 정보
         """
         import plotly.graph_objects as go
         import plotly.io as pio
@@ -1034,7 +1026,7 @@ class TrafficAnalyzer:
                         line=dict(width=0.5, color='#1f1f1f')  # 다크모드에 맞는 테두리 색상
                     ),
                     text=text,
-                    name=f"Cluster{cluster}({total_cluster_traffic})",
+                    name=f"클러스터 {cluster} (트래픽: {total_cluster_traffic})",
                     hovertemplate='%{text}<extra></extra>'
                 )
                 
@@ -1110,6 +1102,7 @@ class TrafficAnalyzer:
                         gridcolor='#444',
                         showbackground=True,
                         zerolinecolor='#444',
+                        tickformat='d',
                     ),
                     camera=dict(
                         eye=dict(x=1.5, y=1.5, z=1.5)
@@ -1118,25 +1111,18 @@ class TrafficAnalyzer:
                 ),
                 paper_bgcolor='#111111',
                 plot_bgcolor='#111111',
-                margin=dict(l=0, r=30, b=0, t=30),
+                margin=dict(l=0, r=0, b=0, t=40),  # 업로드된 파일과 동일하게 설정
                 showlegend=True,
                 legend=dict(
-                    orientation="v",
-                    yanchor="top",
-                    y=0.99,
-                    xanchor="right",
-                    x=0.92,
-                    bgcolor='rgba(0,0,0,0.5)',
+                    font=dict(color='#f2f2f2', size=12),
+                    title=dict(text='클러스터', font=dict(color='#f2f2f2')),
+                    x=0.01,  # 왼쪽에 위치
+                    y=0.99,  # 위쪽에 위치
                     bordercolor='#444',
                     borderwidth=1,
-                    font=dict(color='#f2f2f2'),
-                    title=dict(text=' Cluster List '),
-                    itemsizing='constant',
-                    itemclick='toggle',
-                    itemdoubleclick='toggleothers'
+                    bgcolor='rgba(30, 31, 40, 0.85)'  # 업로드된 파일과 동일한 배경색
                 ),
-                font=dict(color='#f2f2f2'),
-                autosize=True
+                font=dict(color='#f2f2f2')
             )
             
             fig = go.Figure(data=data, layout=layout)
@@ -1245,7 +1231,7 @@ class TrafficAnalyzer:
                         line=dict(width=0.5, color='#1f1f1f')  # 다크모드에 맞는 테두리 색상
                     ),
                     text=text,
-                    name=f"Cluster{cluster}({total_cluster_traffic})",
+                    name=f"클러스터 {cluster} (트래픽: {total_cluster_traffic})",
                     hovertemplate='%{text}<extra></extra>'
                 )
                 
@@ -1321,6 +1307,7 @@ class TrafficAnalyzer:
                         gridcolor='#444',
                         showbackground=True,
                         zerolinecolor='#444',
+                        tickformat='d',
                     ),
                     camera=dict(
                         eye=dict(x=1.5, y=1.5, z=1.5)
@@ -1329,22 +1316,16 @@ class TrafficAnalyzer:
                 ),
                 paper_bgcolor='#111111',
                 plot_bgcolor='#111111',
-                margin=dict(l=0, r=30, b=0, t=30),
+                margin=dict(l=0, r=0, b=0, t=40),  # 업로드된 파일과 동일하게 설정
                 showlegend=True,
                 legend=dict(
-                    orientation="v",
-                    yanchor="top",
-                    y=0.99,
-                    xanchor="right",
-                    x=0.92,
-                    bgcolor='rgba(0,0,0,0.5)',
+                    font=dict(color='#f2f2f2', size=12),
+                    title=dict(text='클러스터', font=dict(color='#f2f2f2')),
+                    x=0.01,  # 왼쪽에 위치
+                    y=0.99,  # 위쪽에 위치
                     bordercolor='#444',
                     borderwidth=1,
-                    font=dict(color='#f2f2f2'),
-                    title=dict(text=' Cluster List '),
-                    itemsizing='constant',
-                    itemclick='toggle',
-                    itemdoubleclick='toggleothers'
+                    bgcolor='rgba(30, 31, 40, 0.85)'  # 업로드된 파일과 동일한 배경색
                 ),
                 font=dict(color='#f2f2f2')
             )

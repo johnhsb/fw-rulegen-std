@@ -56,7 +56,9 @@ global_state = {
         'port': 514,
         'interval': 3600,
         'device_filter': '',
-        'device_filter_type': 'all'
+        'device_filter_type': 'all',
+        'regex_filter': '',
+        'regex_filter_type': 'include'
     },
     'dbscan_params': {       # DBSCAN 파라미터 설정
         'min_occurrences': 1,
@@ -302,6 +304,8 @@ def manage_syslog():
                 interval = int(request.form.get('interval', 3600))
                 device_filter = request.form.get('device_filter', '')
                 device_filter_type = request.form.get('device_filter_type', 'all')
+                regex_filter = request.form.get('regex_filter', '')
+                regex_filter_type = request.form.get('regex_filter_type', 'include')
                 
                 # 설정 저장
                 global_state['syslog_config'].update({
@@ -309,7 +313,9 @@ def manage_syslog():
                     'port': port,
                     'interval': interval,
                     'device_filter': device_filter,
-                    'device_filter_type': device_filter_type
+                    'device_filter_type': device_filter_type,
+                    'regex_filter': regex_filter,
+                    'regex_filter_type': regex_filter_type
                 })
                 
                 # Syslog 서버 시작
@@ -529,7 +535,9 @@ def start_syslog_server():
         analysis_interval=config['interval'],
         output_dir=Config.OUTPUT_DIR,
         device_filter=config['device_filter'],
-        device_filter_type=config['device_filter_type']
+        device_filter_type=config['device_filter_type'],
+        regex_filter=config['regex_filter'],
+        regex_filter_type=config['regex_filter_type']
     )
     
     # 별도 스레드에서 실행

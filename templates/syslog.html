@@ -152,6 +152,24 @@
                                 <div class="form-text">특정 장비의 로그만 수집 (비워두면 모든 장비)</div>
                             </div>
                         </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="mb-3">
+                                    <label for="regex_filter" class="form-label">정규식 필터</label>
+                                    <div class="input-group">
+                                        <select class="form-select" id="regex_filter_type" name="regex_filter_type" style="max-width: 120px;" {% if is_running %}disabled{% endif %}>
+                                            <option value="include" {% if syslog_config.regex_filter_type == 'include' %}selected{% endif %}>포함</option>
+                                            <option value="exclude" {% if syslog_config.regex_filter_type == 'exclude' %}selected{% endif %}>제외</option>
+                                        </select>
+                                        <input type="text" class="form-control" id="regex_filter" name="regex_filter" value="{{ syslog_config.regex_filter }}" placeholder="정규식 패턴" {% if is_running %}disabled{% endif %}>
+                                    </div>
+                                    <div class="form-text">
+                                        로그 메시지를 필터링할 정규식 패턴 (예: RT_FLOW_SESSION_CREATE.*, denied.*)
+                                        <br>포함: 패턴에 매치되는 로그만 저장, 제외: 패턴에 매치되는 로그는 제외
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
@@ -206,6 +224,9 @@ set system syslog host structured-data
                 
                 <div class="alert alert-info mt-3">
                     <i class="bi bi-info-circle"></i> 수집된 로그는 자동으로 분석되어 대시보드에 표시됩니다.
+                    {% if syslog_config.regex_filter %}
+                    <br><strong>정규식 필터가 적용됨:</strong> {{ syslog_config.regex_filter }} ({{ syslog_config.regex_filter_type }})
+                    {% endif %}
                 </div>
             </div>
         </div>
