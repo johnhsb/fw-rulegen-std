@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}대시보드 - 방화벽 정책 추천 시스템{% endblock %}
+{% block title %}대시보드 - ML기반 방화벽 정책 추천 시스템{% endblock %}
 
 {% block head %}
 <style>
@@ -117,6 +117,7 @@
                                         <th scope="col">일시</th>
                                         <th scope="col">로그 파일</th>
                                         <th scope="col">장비명</th>
+                                        <th scope="col">필터</th>
                                         <th scope="col">로그 수</th>
                                         <th scope="col">정책 수</th>
                                         <th scope="col">작업</th>
@@ -152,6 +153,13 @@
                                                 {% endif %}
                                             {% else %}
                                                 <small class="text-muted">전체</small>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-center">
+                                            {% if analysis.filters_applied %}
+                                                <span class="badge bg-warning">적용</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">미적용</span>
                                             {% endif %}
                                         </td>
                                         <td class="text-light">

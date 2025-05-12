@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-방화벽 정책 추천 시스템 - 메인 애플리케이션
+ML기반 방화벽 정책 추천 시스템 - 메인 애플리케이션
 --------------------------------------------------
 방화벽 로그 분석 및 정책 추천 웹 애플리케이션
 """
@@ -419,15 +419,129 @@ def get_filter_params_from_request(form_data):
 def apply_filters(log_df, filters):
     """필터를 로그 데이터에 적용"""
     filtered_df = log_df.copy()
-    
+
     # 장비명 필터
     if filters.get('device_name_filter'):
-        # 필터 로직 구현
-        pass
-    
-    # 다른 필터들 구현
-    # ...
-    
+        device_filter = filters['device_name_filter']
+        filter_type = filters['device_name_filter_type']
+
+        device_list = [device.strip() for device in device_filter.split(',') if device.strip()]
+
+        if device_list:
+            if filter_type == 'include':
+                filtered_df = filtered_df[filtered_df['device_name'].isin(device_list)]
+            elif filter_type == 'exclude':
+                filtered_df = filtered_df[~filtered_df['device_name'].isin(device_list)]
+
+    # 출발지 IP 필터
+    if filters.get('source_ip_filter'):
+        source_ip_filter = filters['source_ip_filter']
+        filter_type = filters['source_ip_filter_type']
+
+        ip_list = [ip.strip() for ip in source_ip_filter.split(',') if ip.strip()]
+
+        if ip_list:
+            # 단순 문자열 비교 (CIDR 처리는 추가 구현 필요)
+            mask = filtered_df['source_ip'].apply(lambda ip: any(ip_filter in ip for ip_filter in ip_list))
+
+            if filter_type == 'include':
+                filtered_df = filtered_df[mask]
+            elif filter_type == 'exclude':
+                filtered_df = filtered_df[~mask]
+
+    # 목적지 IP 필터
+    if filters.get('destination_ip_filter'):
+        dest_ip_filter = filters['destination_ip_filter']
+        filter_type = filters['destination_ip_filter_type']
+
+        ip_list = [ip.strip() for ip in dest_ip_filter.split(',') if ip.strip()]
+
+        if ip_list:
+            mask = filtered_df['destination_ip'].apply(lambda ip: any(ip_filter in ip for ip_filter in ip_list))
+
+            if filter_type == 'include':
+                filtered_df = filtered_df[mask]
+            elif filter_type == 'exclude':
+                filtered_df = filtered_df[~mask]
+
+    # 포트 필터
+    if filters.get('port_filter'):
+        port_filter = filters['port_filter']
+        filter_type = filters['port_filter_type']
+
+        port_list = []
+        for port_range in port_filter.split(','):
+            port_range = port_range.strip()
+            if '-' in port_range:  # 포트 범위
+                start, end = map(int, port_range.split('-'))
+                port_list.extend(range(start, end + 1))
+            elif port_range:  # 단일 포트
+                port_list.append(int(port_range))
+
+        if port_list:
+            mask = (filtered_df['source_port'].isin(port_list)) | (filtered_df['destination_port'].isin(port_list))
+
+            if filter_type == 'include':
+                filtered_df = filtered_df[mask]
+            elif filter_type == 'exclude':
+                filtered_df = filtered_df[~mask]
+
+    # 프로토콜 필터
+    if filters.get('protocol_filter'):
+        protocol_filter = filters['protocol_filter']
+        filter_type = filters['protocol_filter_type']
+
+        protocol_list = [p.strip().lower() for p in protocol_filter.split(',') if p.strip()]
+
+        if protocol_list:
+            mask = filtered_df['protocol'].str.lower().isin(protocol_list)
+
+            if filter_type == 'include':
+                filtered_df = filtered_df[mask]
+            elif filter_type == 'exclude':
+                filtered_df = filtered_df[~mask]
+
+    # 존 필터 구현
+    if filters.get('source_zone_filter'):
+        zone_filter = filters['source_zone_filter']
+        filter_type = filters['source_zone_filter_type']
+
+        zone_list = [z.strip() for z in zone_filter.split(',') if z.strip()]
+
+        if zone_list and 'source_zone' in filtered_df.columns:
+            mask = filtered_df['source_zone'].isin(zone_list)
+
+            if filter_type == 'include':
+                filtered_df = filtered_df[mask]
+            elif filter_type == 'exclude':
+                filtered_df = filtered_df[~mask]
+
+    if filters.get('destination_zone_filter'):
+        zone_filter = filters['destination_zone_filter']
+        filter_type = filters['destination_zone_filter_type']
+
+        zone_list = [z.strip() for z in zone_filter.split(',') if z.strip()]
+
+        if zone_list and 'destination_zone' in filtered_df.columns:
+            mask = filtered_df['destination_zone'].isin(zone_list)
+
+            if filter_type == 'include':
+                filtered_df = filtered_df[mask]
+            elif filter_type == 'exclude':
+                filtered_df = filtered_df[~mask]
+
+    # 날짜 필터
+    if filters.get('start_date') and filters.get('end_date'):
+        try:
+            start_date = pd.to_datetime(filters['start_date'])
+            end_date = pd.to_datetime(filters['end_date'])
+
+            if 'timestamp' in filtered_df.columns:
+                filtered_df = filtered_df[(filtered_df['timestamp'] >= start_date) &
+                                         (filtered_df['timestamp'] <= end_date)]
+        except Exception as e:
+            logger.error(f"날짜 필터 적용 오류: {e}")
+
     return filtered_df
 
 def create_visualizations(analyzer, timestamp):
@@ -607,7 +721,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(
-        description="방화벽 정책 추천 시스템"
+        description="ML기반 방화벽 정책 추천 시스템"
     )
     
     parser.add_argument('--host', default='0.0.0.0', help='웹 서버 호스트 (기본: 0.0.0.0)')
