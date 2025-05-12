@@ -471,7 +471,7 @@ class TrafficAnalyzer:
 
         return cidr_blocks
 
-    def analyze_top_traffic_patterns(self, top_n=30):
+    def analyze_top_traffic_patterns(self, top_n=50):
         """
         트래픽에서 상위 트래픽 패턴을 분석하여 출력
         
@@ -786,8 +786,8 @@ class TrafficAnalyzer:
             dest_ips = list(flow_df['destination_ip'].unique())
             
             # 네트워크 크기가 너무 클 경우 최상위 트래픽만 사용
-            max_nodes = 30  # 최대 노드 수
-            max_edges = 50  # 최대 엣지 수
+            max_nodes = 50  # 최대 노드 수
+            max_edges = 100  # 최대 엣지 수
             
             if len(source_ips) > max_nodes or len(dest_ips) > max_nodes:
                 # 트래픽 양 기준으로 정렬
@@ -872,7 +872,7 @@ class TrafficAnalyzer:
                 title_text=title,
                 font=dict(size=12),
                 autosize=True,
-                height=800,
+                height=1000,
                 margin=dict(l=25, r=25, b=25, t=50, pad=4)
             )
             

@@ -12,6 +12,7 @@ import sys
 import logging
 import json
 import hashlib
+import ipaddress
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file
@@ -64,7 +65,7 @@ global_state = {
         'min_occurrences': 1,
         'eps': 0.5,
         'min_samples': 2,
-        'max_data_points': 10000
+        'max_data_points': 30000
     }
 }
 
@@ -175,11 +176,14 @@ def api_analyze_logs():
         'min_occurrences': int(request.form.get('min_occurrences', 1)),
         'eps': float(request.form.get('eps', 0.5)),
         'min_samples': int(request.form.get('min_samples', 2)),
-        'max_data_points': int(request.form.get('max_data_points', 10000))
+        'max_data_points': int(request.form.get('max_data_points', 30000))
     }
 
     # 필터 파라미터 가져오기
     filters = get_filter_params_from_request(request.form)
+
+    # top_n 파라미터 가져오기 (추가)
+    top_n = int(request.form.get('top_n', 50))
 
     # 로그 파일 확인
     uploaded_files = session.get('uploaded_files', [])
@@ -205,7 +209,7 @@ def api_analyze_logs():
         analyzer.cluster_traffic_patterns()
 
         # 분석 결과 (상위 트래픽 패턴, 클러스터링 등)
-        top_traffic_df = analyzer.analyze_top_traffic_patterns(top_n=30)
+        top_traffic_df = analyzer.analyze_top_traffic_patterns(top_n=top_n)
         policies = analyzer.generate_policy_recommendations()
         config = PolicyGenerator(policies).generate_juniper_config()
 
@@ -218,15 +222,13 @@ def api_analyze_logs():
         
         # 필터 적용 여부 확인
         filters_applied = any([
-            filters.get('device_name_filter'),
-            filters.get('source_ip_filter'),
-            filters.get('destination_ip_filter'),
-            filters.get('port_filter'),
-            filters.get('protocol_filter'),
-            filters.get('source_zone_filter'),
-            filters.get('destination_zone_filter'),
-            filters.get('start_date'),
-            filters.get('end_date'),
+            filters.get('device_name_filter') and filters.get('device_name_filter').strip(),
+            filters.get('source_ip_filter') and filters.get('source_ip_filter').strip(),
+            filters.get('destination_ip_filter') and filters.get('destination_ip_filter').strip(),
+            filters.get('port_filter') and filters.get('port_filter').strip(),
+            filters.get('protocol_filter') and filters.get('protocol_filter').strip(),
+            filters.get('source_zone_filter') and filters.get('source_zone_filter').strip(),
+            filters.get('destination_zone_filter') and filters.get('destination_zone_filter').strip(),
             filters.get('exclude_noise')
         ])
 
@@ -377,7 +379,7 @@ def settings():
                 'min_occurrences': int(request.form.get('min_occurrences', 1)),
                 'eps': float(request.form.get('eps', 0.5)),
                 'min_samples': int(request.form.get('min_samples', 2)),
-                'max_data_points': int(request.form.get('max_data_points', 10000))
+                'max_data_points': int(request.form.get('max_data_points', 30000))
             })
             
             # 기타 설정 업데이트 (디렉토리 등)
@@ -411,6 +413,8 @@ def get_filter_params_from_request(form_data):
         'source_zone_filter_type': form_data.get('source_zone_filter_type', 'include'),
         'destination_zone_filter': form_data.get('destination_zone_filter', ''),
         'destination_zone_filter_type': form_data.get('destination_zone_filter_type', 'include'),
+        'policy_name_filter': form_data.get('policy_name_filter', ''),  # 정책명 필터 추가
+        'policy_name_filter_type': form_data.get('policy_name_filter_type', 'include'),  # 정책명 필터 타입 추가
         'start_date': form_data.get('start_date', ''),
         'end_date': form_data.get('end_date', ''),
         'exclude_noise': form_data.get('exclude_noise') == '1'
@@ -419,9 +423,39 @@ def get_filter_params_from_request(form_data):
 def apply_filters(log_df, filters):
     """필터를 로그 데이터에 적용"""
     filtered_df = log_df.copy()
+    
+    # IP 주소 매칭 헬퍼 함수 - CIDR 및 정확한 매칭 지원
+    def ip_matches(ip, filter_list):
+        try:
+            # IP를 ipaddress 객체로 변환
+            target_ip = ipaddress.ip_address(ip)
+            
+            for filter_ip in filter_list:
+                if '/' in filter_ip:  # CIDR 표기법
+                    try:
+                        network = ipaddress.ip_network(filter_ip, strict=False)
+                        if target_ip in network:
+                            return True
+                    except ValueError:
+                        # 정확한 문자열 매칭으로 폴백
+                        if filter_ip == ip:
+                            return True
+                else:  # 단일 IP
+                    try:
+                        filter_ip_obj = ipaddress.ip_address(filter_ip)
+                        if target_ip == filter_ip_obj:
+                            return True
+                    except ValueError:
+                        # IP 변환 오류 시 정확한 문자열 비교
+                        if filter_ip == ip:
+                            return True
+            return False
+        except ValueError:
+            # IP 변환 오류 시 정확한 문자열 매칭
+            return ip in filter_list
 
     # 장비명 필터
-    if filters.get('device_name_filter'):
+    if filters.get('device_name_filter') and filters.get('device_name_filter').strip():
         device_filter = filters['device_name_filter']
         filter_type = filters['device_name_filter_type']
 
@@ -434,15 +468,15 @@ def apply_filters(log_df, filters):
                 filtered_df = filtered_df[~filtered_df['device_name'].isin(device_list)]
 
     # 출발지 IP 필터
-    if filters.get('source_ip_filter'):
+    if filters.get('source_ip_filter') and filters.get('source_ip_filter').strip():
         source_ip_filter = filters['source_ip_filter']
         filter_type = filters['source_ip_filter_type']
 
         ip_list = [ip.strip() for ip in source_ip_filter.split(',') if ip.strip()]
 
         if ip_list:
-            # 단순 문자열 비교 (CIDR 처리는 추가 구현 필요)
-            mask = filtered_df['source_ip'].apply(lambda ip: any(ip_filter in ip for ip_filter in ip_list))
+            # 향상된 IP 매칭 사용
+            mask = filtered_df['source_ip'].apply(lambda ip: ip_matches(ip, ip_list))
 
             if filter_type == 'include':
                 filtered_df = filtered_df[mask]
@@ -450,36 +484,46 @@ def apply_filters(log_df, filters):
                 filtered_df = filtered_df[~mask]
 
     # 목적지 IP 필터
-    if filters.get('destination_ip_filter'):
+    if filters.get('destination_ip_filter') and filters.get('destination_ip_filter').strip():
         dest_ip_filter = filters['destination_ip_filter']
         filter_type = filters['destination_ip_filter_type']
 
         ip_list = [ip.strip() for ip in dest_ip_filter.split(',') if ip.strip()]
 
         if ip_list:
-            mask = filtered_df['destination_ip'].apply(lambda ip: any(ip_filter in ip for ip_filter in ip_list))
+            # 향상된 IP 매칭 사용
+            mask = filtered_df['destination_ip'].apply(lambda ip: ip_matches(ip, ip_list))
 
             if filter_type == 'include':
                 filtered_df = filtered_df[mask]
             elif filter_type == 'exclude':
                 filtered_df = filtered_df[~mask]
 
-    # 포트 필터
-    if filters.get('port_filter'):
+    # 포트 필터 - 대규모 범위 처리 개선
+    if filters.get('port_filter') and filters.get('port_filter').strip():
         port_filter = filters['port_filter']
         filter_type = filters['port_filter_type']
 
-        port_list = []
-        for port_range in port_filter.split(','):
-            port_range = port_range.strip()
-            if '-' in port_range:  # 포트 범위
-                start, end = map(int, port_range.split('-'))
-                port_list.extend(range(start, end + 1))
-            elif port_range:  # 단일 포트
-                port_list.append(int(port_range))
+        # 포트 범위 효율적 처리
+        def port_in_ranges(port, port_ranges):
+            for p_range in port_ranges:
+                if '-' in p_range:
+                    start, end = map(int, p_range.split('-'))
+                    if start <= port <= end:
+                        return True
+                else:
+                    if port == int(p_range):
+                        return True
+            return False
 
-        if port_list:
-            mask = (filtered_df['source_port'].isin(port_list)) | (filtered_df['destination_port'].isin(port_list))
+        port_ranges = [p.strip() for p in port_filter.split(',') if p.strip()]
+
+        if port_ranges:
+            # 범위 검사 함수를 사용하여 각 포트 확인
+            mask = (
+                filtered_df['source_port'].apply(lambda p: port_in_ranges(p, port_ranges)) | 
+                filtered_df['destination_port'].apply(lambda p: port_in_ranges(p, port_ranges))
+            )
 
             if filter_type == 'include':
                 filtered_df = filtered_df[mask]
@@ -487,13 +531,14 @@ def apply_filters(log_df, filters):
                 filtered_df = filtered_df[~mask]
 
     # 프로토콜 필터
-    if filters.get('protocol_filter'):
+    if filters.get('protocol_filter') and filters.get('protocol_filter').strip():
         protocol_filter = filters['protocol_filter']
         filter_type = filters['protocol_filter_type']
 
         protocol_list = [p.strip().lower() for p in protocol_filter.split(',') if p.strip()]
 
         if protocol_list:
+            # 대소문자 구분 없이 정확한 프로토콜 매칭
             mask = filtered_df['protocol'].str.lower().isin(protocol_list)
 
             if filter_type == 'include':
@@ -501,8 +546,23 @@ def apply_filters(log_df, filters):
             elif filter_type == 'exclude':
                 filtered_df = filtered_df[~mask]
 
+    # 정책명 필터 추가
+    if filters.get('policy_name_filter'):
+        policy_filter = filters['policy_name_filter']
+        filter_type = filters['policy_name_filter_type']
+
+        policy_list = [p.strip() for p in policy_filter.split(',') if p.strip()]
+
+        if policy_list and 'policy_name' in filtered_df.columns:
+            mask = filtered_df['policy_name'].isin(policy_list)
+
+            if filter_type == 'include':
+                filtered_df = filtered_df[mask]
+            elif filter_type == 'exclude':
+                filtered_df = filtered_df[~mask]
+
     # 존 필터 구현
-    if filters.get('source_zone_filter'):
+    if filters.get('source_zone_filter') and filters.get('source_zone_filter').strip():
         zone_filter = filters['source_zone_filter']
         filter_type = filters['source_zone_filter_type']
 
@@ -516,7 +576,7 @@ def apply_filters(log_df, filters):
             elif filter_type == 'exclude':
                 filtered_df = filtered_df[~mask]
 
-    if filters.get('destination_zone_filter'):
+    if filters.get('destination_zone_filter') and filters.get('destination_zone_filter').strip():
         zone_filter = filters['destination_zone_filter']
         filter_type = filters['destination_zone_filter_type']
 
@@ -535,12 +595,25 @@ def apply_filters(log_df, filters):
         try:
             start_date = pd.to_datetime(filters['start_date'])
             end_date = pd.to_datetime(filters['end_date'])
+            
+            # end_date는 해당 날짜의 마지막 시간까지 포함
+            end_date = end_date + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
 
             if 'timestamp' in filtered_df.columns:
+                # timestamp 열의 타입 확인
+                if not pd.api.types.is_datetime64_any_dtype(filtered_df['timestamp']):
+                    filtered_df['timestamp'] = pd.to_datetime(filtered_df['timestamp'])
+                
                 filtered_df = filtered_df[(filtered_df['timestamp'] >= start_date) &
                                          (filtered_df['timestamp'] <= end_date)]
         except Exception as e:
             logger.error(f"날짜 필터 적용 오류: {e}")
+
+    # 노이즈 제외 옵션
+    if filters.get('exclude_noise'):
+        if 'cluster' in filtered_df.columns:
+            # 클러스터가 -1인 경우 노이즈 포인트
+            filtered_df = filtered_df[filtered_df['cluster'] != -1]
 
     return filtered_df
 

@@ -93,7 +93,7 @@
 {% block content %}
 <h2>대시보드</h2>
 <div class="row">
-    <div class="col-md-6">
+    <div class="col-12">
         <div class="card mb-4">
             <div class="card-header">
                 <h5 class="mb-0">트래픽 분석 결과</h5>
@@ -114,7 +114,7 @@
                             <table class="table table-dark table-striped table-hover mb-0">
                                 <thead>
                                     <tr>
-                                        <th scope="col">일시</th>
+                                        <th scope="col">분석 일시</th>
                                         <th scope="col">로그 파일</th>
                                         <th scope="col">장비명</th>
                                         <th scope="col">필터</th>
@@ -127,14 +127,14 @@
                                     {% for analysis in manual_analyses %}
                                     <tr>
                                         <td class="text-light">
-                                            {{ analysis.date[4:6] }}-{{ analysis.date[6:] }}
+                                            {{ analysis.date[:4] }}-{{ analysis.date[4:6] }}-{{ analysis.date[6:] }}
                                             <br>
                                             <small>{{ analysis.time[:2] }}:{{ analysis.time[2:4] }}:{{ analysis.time[4:] }}</small>
                                         </td>
                                         <td class="text-light">
                                             {% if analysis.log_filenames %}
                                                 {% for filename in analysis.log_filenames[:3] %}
-                                                    <small>{{ filename }}</small><br>
+                                                    {{ filename }}<br>
                                                 {% endfor %}
                                                 {% if analysis.log_filenames|length > 3 %}
                                                     <small>... ({{ analysis.log_filenames|length }}개 파일)</small>
@@ -155,7 +155,7 @@
                                                 <small class="text-muted">전체</small>
                                             {% endif %}
                                         </td>
-                                        <td class="text-center">
+                                        <td class="text-light">
                                             {% if analysis.filters_applied %}
                                                 <span class="badge bg-warning">적용</span>
                                             {% else %}
@@ -191,9 +191,10 @@
                             <table class="table table-dark table-striped table-hover mb-0">
                                 <thead>
                                     <tr>
-                                        <th scope="col">일시</th>
+                                        <th scope="col">분석 일시</th>
                                         <th scope="col">로그 파일</th>
                                         <th scope="col">장비명</th>
+                                        <th scope="col">필터</th>
                                         <th scope="col">로그 수</th>
                                         <th scope="col">정책 수</th>
                                         <th scope="col">작업</th>
@@ -203,14 +204,14 @@
                                     {% for analysis in syslog_analyses %}
                                     <tr>
                                         <td class="text-light">
-                                            {{ analysis.date[4:6] }}-{{ analysis.date[6:] }}
+                                            {{ analysis.date[:4] }}-{{ analysis.date[4:6] }}-{{ analysis.date[6:] }}
                                             <br>
                                             <small>{{ analysis.time[:2] }}:{{ analysis.time[2:4] }}:{{ analysis.time[4:] }}</small>
                                         </td>
                                         <td class="text-light">
                                             {% if analysis.log_filenames %}
                                                 {% for filename in analysis.log_filenames[:3] %}
-                                                    <small>{{ filename }}</small><br>
+                                                    {{ filename }}<br>
                                                 {% endfor %}
                                                 {% if analysis.log_filenames|length > 3 %}
                                                     <small>... ({{ analysis.log_filenames|length }}개 파일)</small>
@@ -229,6 +230,13 @@
                                                 {% endif %}
                                             {% else %}
                                                 <small class="text-muted">전체</small>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-light">
+                                            {% if analysis.filters_applied %}
+                                                <span class="badge bg-warning">적용</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">미적용</span>
                                             {% endif %}
                                         </td>
                                         <td class="text-light">
@@ -252,78 +260,6 @@
                         </div>
                         {% else %}
                         <div class="alert alert-info mb-0">아직 Syslog 분석 결과가 없습니다.</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">수집된 로그 파일</h5>
-            </div>
-            <div class="card-body p-0">
-                <ul class="nav nav-tabs nav-justified" id="logsTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="manual-logs-tab" data-bs-toggle="tab" data-bs-target="#manual-logs" type="button" role="tab">수동 업로드</button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="syslog-logs-tab" data-bs-toggle="tab" data-bs-target="#syslog-logs" type="button" role="tab">Syslog</button>
-                    </li>
-                </ul>
-                <div class="tab-content p-3" id="logsTabsContent">
-                    <div class="tab-pane fade show active" id="manual-logs" role="tabpanel">
-                        {% if manual_logs %}
-                        <div class="table-responsive">
-                            <table class="table table-dark table-striped table-hover mb-0">
-                                <thead>
-                                    <tr>
-                                        <th scope="col">파일명</th>
-                                        <th scope="col">크기</th>
-                                        <th scope="col">수정일</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for log in manual_logs %}
-                                    <tr>
-                                        <td class="text-light">{{ log.filename }}</td>
-                                        <td class="text-light">{{ (log.size / 1024)|round(1) }} KB</td>
-                                        <td class="text-light">{{ log.modified.strftime('%Y-%m-%d %H:%M') }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                        <div class="alert alert-info mb-0">아직 업로드된 로그 파일이 없습니다.</div>
-                        {% endif %}
-                    </div>
-                    <div class="tab-pane fade" id="syslog-logs" role="tabpanel">
-                        {% if syslog_logs %}
-                        <div class="table-responsive">
-                            <table class="table table-dark table-striped table-hover mb-0">
-                                <thead>
-                                    <tr>
-                                        <th scope="col">파일명</th>
-                                        <th scope="col">크기</th>
-                                        <th scope="col">수정일</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for log in syslog_logs %}
-                                    <tr>
-                                        <td class="text-light">{{ log.filename }}</td>
-                                        <td class="text-light">{{ (log.size / 1024)|round(1) }} KB</td>
-                                        <td class="text-light">{{ log.modified.strftime('%Y-%m-%d %H:%M') }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                        <div class="alert alert-info mb-0">아직 Syslog 로그 파일이 없습니다.</div>
                         {% endif %}
                     </div>
                 </div>
