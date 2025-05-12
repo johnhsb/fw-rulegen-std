@@ -66,7 +66,7 @@ global_state = {
         'min_occurrences': 1,
         'eps': 0.5,
         'min_samples': 2,
-        'max_data_points': 30000
+        'max_data_points': 10000
     }
 }
 
@@ -177,7 +177,7 @@ def api_analyze_logs():
         'min_occurrences': int(request.form.get('min_occurrences', 1)),
         'eps': float(request.form.get('eps', 0.5)),
         'min_samples': int(request.form.get('min_samples', 2)),
-        'max_data_points': int(request.form.get('max_data_points', 30000))
+        'max_data_points': int(request.form.get('max_data_points', 10000))
     }
 
     # 필터 파라미터 가져오기
@@ -380,7 +380,7 @@ def settings():
                 'min_occurrences': int(request.form.get('min_occurrences', 1)),
                 'eps': float(request.form.get('eps', 0.5)),
                 'min_samples': int(request.form.get('min_samples', 2)),
-                'max_data_points': int(request.form.get('max_data_points', 30000))
+                'max_data_points': int(request.form.get('max_data_points', 10000))
             })
             
             # 기타 설정 업데이트 (디렉토리 등)
