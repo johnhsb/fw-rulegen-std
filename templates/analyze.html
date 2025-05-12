@@ -430,7 +430,7 @@ $(document).ready(function() {
             customRangeLabel: '직접 선택'
         },
         theme: 'dark',
-        startDate: moment().subtract(7, 'days'),
+        startDate: moment().subtract(1, 'year'),
         endDate: moment(),
         ranges: {
             '오늘': [moment(), moment()],
@@ -446,7 +446,7 @@ $(document).ready(function() {
     });
     
     // 초기 날짜 값 설정
-    $('#start_date').val(moment().subtract(7, 'days').format('YYYY-MM-DD'));
+    $('#start_date').val(moment().subtract(1, 'year').format('YYYY-MM-DD'));
     $('#end_date').val(moment().format('YYYY-MM-DD'));
     
     // 분석 폼 제출 처리
