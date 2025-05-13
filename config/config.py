@@ -34,4 +34,6 @@ class Config:
     SESSION_FILE_DIR = os.path.join(BASE_DIR, 'flask_sessions')
     SESSION_PERMANENT = False
     SESSION_USE_SIGNER = True
+    SESSION_COOKIE_SECURE = True
+    SESSION_SERIALIZATION_FORMAT = 'msgpack'
     PERMANENT_SESSION_LIFETIME = timedelta(hours=1)
