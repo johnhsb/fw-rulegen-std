@@ -8,6 +8,7 @@
 """
 
 import os
+import re
 import socket
 import logging
 import threading
@@ -166,7 +167,6 @@ class SyslogServer:
         # 필터 적용 (필터가 설정된 경우)
         if self.device_filter:
             # 장비명 확인
-            import re
             device_match = re.search(r'^.*?(\w+(?:-\w+)*)\s+RT_FLOW:', message)
             
             if device_match:
@@ -205,7 +205,6 @@ class SyslogServer:
         # 장비명이 있으면 장비명_날짜.log, 없으면 All_날짜.log로 저장
         device_name = "All"
         
-        import re
         device_match = re.search(r'^.*?(\w+(?:-\w+)*)\s+RT_FLOW:', message)
         if device_match:
             device_name = device_match.group(1)

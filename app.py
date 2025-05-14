@@ -369,6 +369,29 @@ def manage_syslog():
                           is_running=global_state['is_syslog_running'],
                           syslog_config=global_state['syslog_config'])
 
+@app.route('/api/log_files')
+@login_required
+def api_log_files():
+    """로그 파일 목록 API"""
+    log_type = request.args.get('type', 'upload')
+
+    # 기존 함수 재사용
+    logs = get_logs_list(log_type)
+
+    # 응답 형태 맞추기
+    files = []
+    for log in logs:
+        files.append({
+            'filename': log['filename'],
+            'size': log['size'],
+            'modified': log['modified'].isoformat() if hasattr(log['modified'], 'isoformat') else str(log['modified'])
+        })
+
+    return jsonify({
+        'success': True,
+        'files': files
+    })
+
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
