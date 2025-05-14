@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ WELL_KNOWN_PORTS = {
 class TrafficAnalyzer:
     """트래픽 패턴을 분석하고 정책을 추천하는 클래스"""
     
-    def __init__(self, log_df, min_occurrences=1, eps=0.5, min_samples=2, max_data_points=30000):
+    def __init__(self, log_df, min_occurrences=1, eps=0.5, min_samples=2, max_data_points=30000, enable_dynamic_subnet=False, **kwargs):
         """
         초기화
         
@@ -38,6 +39,7 @@ class TrafficAnalyzer:
             eps (float): DBSCAN 클러스터링 거리 파라미터
             min_samples (int): DBSCAN 클러스터링 최소 샘플 수
             max_data_points (int): 클러스터링에 사용할 최대 데이터 포인트 수
+            enable_dynamic_subnet (True|False): 동적 클러스터링 적용여부
         """
         self.log_df = log_df
         self.min_occurrences = min_occurrences
@@ -46,6 +48,7 @@ class TrafficAnalyzer:
         self.max_data_points = max_data_points
         self.clustered_df = None
         self.policies = []
+        self.enable_dynamic_subnet = enable_dynamic_subnet
     
     def get_common_device_names(self, limit=10):
         """
@@ -93,103 +96,6 @@ class TrafficAnalyzer:
         except Exception as e:
             logger.warning(f"IP 주소 변환 오류 {ip}: {e}")
             return 0
-    
-    def preprocess_data(self):
-        """
-        데이터 전처리 (IPv4/IPv6 지원)
-        
-        Returns:
-            DataFrame: 전처리된 데이터
-        """
-        if self.log_df.empty:
-            logger.error("분석할 데이터가 없습니다!")
-            return self.log_df
-        
-        logger.info("분석을 위한 데이터 전처리 중...")
-        
-        # 필요한 열만 선택
-        cols = ['source_ip', 'destination_ip', 'source_port', 'destination_port', 
-                'protocol', 'source_zone', 'destination_zone', 'is_ipv6']
-        
-        # is_ipv6 열이 없는 경우 추가
-        if 'is_ipv6' not in self.log_df.columns:
-            self.log_df['is_ipv6'] = self.log_df['source_ip'].apply(lambda x: ':' in str(x))
-        
-        df = self.log_df[cols].copy()
-
-        # ICMP 프로토콜 데이터 처리 - 포트 번호를 0으로 통일
-        # ICMP와 ICMPv6는 포트 개념이 없으므로 포트 번호를 0으로 설정
-        icmp_mask = (df['protocol'] == 'icmp') | (df['protocol'] == 'icmpv6')
-        df.loc[icmp_mask, 'destination_port'] = 0
-        df.loc[icmp_mask, 'source_port'] = 0
-        
-        # 중복 제거 및 나타난 횟수 계산
-        df['occurrence'] = 1
-        df = df.groupby(cols).sum().reset_index()
-        
-        # 최소 발생 횟수 필터링
-        df = df[df['occurrence'] >= self.min_occurrences]
-        
-        # IPv4와 IPv6를 분리하여 처리
-        ipv4_df = df[~df['is_ipv6']].copy()
-        ipv6_df = df[df['is_ipv6']].copy()
-        
-        # IPv4 처리
-        if not ipv4_df.empty:
-            # IP 주소를 정수로 변환 (클러스터링을 위해)
-            ipv4_df['src_ip_int'] = ipv4_df['source_ip'].apply(self.ip_to_int)
-            ipv4_df['dst_ip_int'] = ipv4_df['destination_ip'].apply(self.ip_to_int)
-            
-            # IP 서브넷 정보 추가 (클러스터링 개선을 위해)
-            ipv4_df['src_subnet'] = ipv4_df['source_ip'].apply(
-                lambda x: str(ipaddress.IPv4Network(f"{x}/24", strict=False)))
-            ipv4_df['dst_subnet'] = ipv4_df['destination_ip'].apply(
-                lambda x: str(ipaddress.IPv4Network(f"{x}/24", strict=False)))
-            
-            # 서브넷을 정수로 변환
-            ipv4_df['src_subnet_int'] = ipv4_df['src_subnet'].apply(
-                lambda x: int(ipaddress.IPv4Network(x).network_address))
-            ipv4_df['dst_subnet_int'] = ipv4_df['dst_subnet'].apply(
-                lambda x: int(ipaddress.IPv4Network(x).network_address))
-        
-        # IPv6 처리
-        if not ipv6_df.empty:
-            # IPv6 주소를 64비트 정수로 변환 (네트워크 부분)
-            ipv6_df['src_ip_int'] = ipv6_df['source_ip'].apply(self.ip_to_int)
-            ipv6_df['dst_ip_int'] = ipv6_df['destination_ip'].apply(self.ip_to_int)
-            
-            # IPv6 서브넷 정보 추가 (/64 네트워크)
-            ipv6_df['src_subnet'] = ipv6_df['source_ip'].apply(
-                lambda x: str(ipaddress.IPv6Network(f"{x}/64", strict=False)))
-            ipv6_df['dst_subnet'] = ipv6_df['destination_ip'].apply(
-                lambda x: str(ipaddress.IPv6Network(f"{x}/64", strict=False)))
-            
-            # 서브넷을 정수로 변환 (상위 64비트만 사용)
-            ipv6_df['src_subnet_int'] = ipv6_df['src_subnet'].apply(
-                lambda x: int(ipaddress.IPv6Network(x).network_address) & ((1 << 64) - 1))
-            ipv6_df['dst_subnet_int'] = ipv6_df['dst_subnet'].apply(
-                lambda x: int(ipaddress.IPv6Network(x).network_address) & ((1 << 64) - 1))
-        
-        # IPv4와 IPv6 데이터 병합
-        df = pd.concat([ipv4_df, ipv6_df])
-        
-        # 특정 IP 주소가 없는 경우 대비
-        if 'src_ip_int' not in df.columns:
-            df['src_ip_int'] = 0
-        if 'dst_ip_int' not in df.columns:
-            df['dst_ip_int'] = 0
-        if 'src_subnet_int' not in df.columns:
-            df['src_subnet_int'] = 0
-        if 'dst_subnet_int' not in df.columns:
-            df['dst_subnet_int'] = 0
-        if 'src_subnet' not in df.columns:
-            df['src_subnet'] = ''
-        if 'dst_subnet' not in df.columns:
-            df['dst_subnet'] = ''
-        
-        logger.info(f"전처리된 데이터: {len(df)} 고유 트래픽 패턴 " +
-                   f"(IPv4: {len(ipv4_df)}, IPv6: {len(ipv6_df)})")
-        return df
     
     def cluster_batch(self, data, batch_size=5000, is_ipv6=False, offset=0):
         """
@@ -471,93 +377,6 @@ class TrafficAnalyzer:
 
         return cidr_blocks
 
-    def analyze_top_traffic_patterns(self, top_n=50):
-        """
-        트래픽에서 상위 트래픽 패턴을 분석하여 출력
-        
-        동일한 출발지IP블럭(/24)-목적지IP(/32)-프로토콜-목적지포트 별로 카운트
-        
-        Args:
-            top_n (int): 출력할 상위 패턴 수
-        
-        Returns:
-            DataFrame: 상위 트래픽 패턴
-        """
-        if self.clustered_df is None:
-            self.cluster_traffic_patterns()
-        
-        if self.clustered_df.empty:
-            logger.error("분석할 데이터가 없습니다!")
-            return None
-        
-        logger.info(f"상위 {top_n} 트래픽 패턴 분석 중...")
-        
-        # IPv4/IPv6 데이터 모두 처리
-        result_dfs = []
-        
-        for is_ipv6 in [False, True]:
-            # 해당 IP 버전의 데이터 필터링
-            if 'is_ipv6' in self.clustered_df.columns:
-                version_df = self.clustered_df[self.clustered_df['is_ipv6'] == is_ipv6].copy()
-            else:
-                # is_ipv6 컬럼이 없는 경우 IP 주소 형식으로 판단
-                version_df = self.clustered_df[self.clustered_df['source_ip'].apply(
-                    lambda x: ':' in str(x)) == is_ipv6].copy()
-            
-            if version_df.empty:
-                continue
-            
-            # 출발지 IP를 서브넷으로 그룹화
-            if 'src_subnet' not in version_df.columns:
-                if is_ipv6:
-                    # IPv6는 /64 서브넷으로 그룹화
-                    version_df['src_subnet'] = version_df['source_ip'].apply(
-                        lambda x: str(ipaddress.IPv6Network(f"{x}/64", strict=False)))
-                else:
-                    # IPv4는 /24 서브넷으로 그룹화
-                    version_df['src_subnet'] = version_df['source_ip'].apply(
-                        lambda x: str(ipaddress.IPv4Network(f"{x}/24", strict=False)))
-            
-            # 출발지 서브넷(/24) + 목적지 IP(/32) + 프로토콜 + 목적지 포트로 그룹화하여 트래픽 볼륨 계산
-            agg_cols = ['src_subnet', 'destination_ip', 'protocol', 'destination_port']
-            traffic_grouped = version_df.groupby(agg_cols).agg({
-                'occurrence': 'sum',
-                'source_ip': lambda x: list(set(x))  # 고유 소스 IP 목록
-            }).reset_index()
-            
-            # 트래픽 볼륨으로 정렬
-            traffic_grouped.sort_values('occurrence', ascending=False, inplace=True)
-            
-            # 상위 N개만 선택 (각 IP 버전별로)
-            top_traffic = traffic_grouped.head(top_n)
-            
-            # 전체 트래픽 대비 비율 계산
-            total_traffic = traffic_grouped['occurrence'].sum()
-            top_traffic['percentage'] = (top_traffic['occurrence'] / max(total_traffic, 1) * 100).round(2)
-            
-            # 소스 IP 개수 계산
-            top_traffic['src_ip_count'] = top_traffic['source_ip'].apply(len)
-            
-            # 포트/프로토콜 정보 포맷팅
-            top_traffic['port_info'] = top_traffic.apply(
-                lambda row: f"{row['destination_port']}({row['protocol']})", axis=1)
-            
-            # 필요한 컬럼만 선택
-            result_df = top_traffic[['src_subnet', 'destination_ip', 'protocol', 'destination_port', 
-                                    'port_info', 'occurrence', 'percentage', 'src_ip_count']]
-            
-            # IP 버전 표시 추가
-            result_df['is_ipv6'] = is_ipv6
-            
-            result_dfs.append(result_df)
-        
-        # 결과 데이터프레임 합치기
-        if not result_dfs:
-            return pd.DataFrame()
-        
-        return pd.concat(result_dfs)
-
-
     def generate_descriptive_policy_name(self, dst_networks, port_ranges, protocols, service_names, cluster_id, is_ipv6=False):
         """
         클러스터 정보에 기반한 설명적인 정책 이름 생성
@@ -617,94 +436,6 @@ class TrafficAnalyzer:
         
         return policy_name
     
-    def generate_policy_recommendations(self):
-        """
-        클러스터링된 트래픽 패턴을 기반으로 정책 추천 생성
-        
-        Returns:
-            list: 추천 정책 목록 (딕셔너리 형태)
-        """
-        if self.clustered_df is None or self.clustered_df.empty:
-            logger.warning("정책 추천을 위한 데이터가 없습니다!")
-            return []
-        
-        logger.info("정책 추천 생성 중...")
-        
-        # 클러스터 ID 목록 (-1은 노이즈 포인트이므로 제외)
-        clusters = sorted(list(set(self.clustered_df['cluster'].values)))
-        clusters = [c for c in clusters if c != -1]
-        
-        recommendations = []
-        
-        # 각 클러스터에 대한 정책 생성
-        for cluster_id in clusters:
-            # 클러스터에 속한 트래픽 패턴 찾기
-            cluster_data = self.clustered_df[self.clustered_df['cluster'] == cluster_id]
-            
-            if cluster_data.empty:
-                continue
-            
-            # IPv6 정책 여부 확인
-            is_ipv6 = cluster_data['is_ipv6'].iloc[0] if 'is_ipv6' in cluster_data.columns else False
-            
-            # 소스 IP, 목적지 IP, 포트, 프로토콜 수집
-            src_ips = list(cluster_data['source_ip'].unique())
-            dst_ips = list(cluster_data['destination_ip'].unique())
-            ports = sorted(list(cluster_data['destination_port'].unique()))
-            protocols = sorted(list(cluster_data['protocol'].unique()))
-            
-            # 소스 존, 목적지 존 수집
-            src_zones = sorted(list(cluster_data['source_zone'].unique()))
-            dst_zones = sorted(list(cluster_data['destination_zone'].unique()))
-            
-            # 서비스 이름 수집
-            service_names = []
-            for port in ports:
-                if port in WELL_KNOWN_PORTS:
-                    service_name = WELL_KNOWN_PORTS[port]
-                    if service_name not in service_names:
-                        service_names.append(service_name)
-            
-            # 서비스 이름이 없으면 프로토콜 이름 사용
-            if not service_names:
-                service_names = protocols
-            
-            # 포트 범위 최적화
-            port_ranges = self.optimize_port_ranges(ports)
-            
-            # IP 범위 최적화
-            src_networks = self.optimize_ip_ranges(src_ips)
-            dst_networks = self.optimize_ip_ranges(dst_ips)
-            
-            # 정책 이름 생성
-            policy_name = self.generate_descriptive_policy_name(
-                dst_networks, port_ranges, protocols, service_names, cluster_id, is_ipv6)
-            
-            # 정책 정보 생성
-            policy = {
-                'name': policy_name,
-                'id': f"C{cluster_id}",
-                'src_networks': src_networks,
-                'dst_networks': dst_networks,
-                'port_ranges': port_ranges,
-                'protocols': protocols,
-                'service_names': service_names,
-                'src_zones': src_zones,
-                'dst_zones': dst_zones,
-                'is_ipv6': is_ipv6,
-                'traffic_count': cluster_data['occurrence'].sum()
-            }
-            
-            recommendations.append(policy)
-        
-        # 트래픽 양에 따라 정책 정렬
-        recommendations.sort(key=lambda x: x['traffic_count'], reverse=True)
-        
-        self.policies = recommendations
-        
-        logger.info(f"{len(recommendations)}개의 정책 추천 생성 완료")
-        return recommendations
-
     def optimize_port_ranges(self, ports):
         """
         포트 목록을 최적화된 포트 범위로 변환
@@ -741,6 +472,482 @@ class TrafficAnalyzer:
         ranges.append(f"{start}-{end}")
         
         return ranges
+
+    def analyze_source_ip_clustering(self, df):
+        """
+        동일한 목적지 IP와 포트를 기준으로 소스 IP를 동적으로 클러스터링
+        
+        Args:
+            df (DataFrame): 트래픽 데이터
+            
+        Returns:
+            DataFrame: 동적 서브넷이 추가된 데이터
+        """
+        if not self.enable_dynamic_subnet:
+            logger.info("동적 서브넷 클러스터링이 비활성화되어 있습니다. 기존 방식 사용.")
+            return self._apply_fixed_subnets(df)
+
+        logger.info("동적 소스 IP 클러스터링 수행 중...")
+        
+        # IPv4와 IPv6 데이터 분리
+        ipv4_df = df[~df['is_ipv6']].copy() if 'is_ipv6' in df.columns else df.copy()
+        ipv6_df = df[df['is_ipv6']].copy() if 'is_ipv6' in df.columns else pd.DataFrame()
+        
+        # IPv4 처리
+        if not ipv4_df.empty:
+            ipv4_df = self._cluster_source_ips_ipv4(ipv4_df)
+        
+        # IPv6 처리
+        if not ipv6_df.empty:
+            ipv6_df = self._cluster_source_ips_ipv6(ipv6_df)
+        
+        # 결과 병합
+        if not ipv4_df.empty and not ipv6_df.empty:
+            result_df = pd.concat([ipv4_df, ipv6_df])
+        elif not ipv4_df.empty:
+            result_df = ipv4_df
+        elif not ipv6_df.empty:
+            result_df = ipv6_df
+        else:
+            result_df = df
+        
+        return result_df
+
+    def _apply_fixed_subnets(self, df):
+        """
+        기존 방식: 고정 서브넷 적용
+        """
+        logger.info("고정 서브넷 적용 중 (IPv4: /24, IPv6: /64)...")
+
+        # IPv4와 IPv6 데이터 분리
+        ipv4_df = df[~df['is_ipv6']].copy() if 'is_ipv6' in df.columns else df.copy()
+        ipv6_df = df[df['is_ipv6']].copy() if 'is_ipv6' in df.columns else pd.DataFrame()
+
+        # IPv4 처리
+        if not ipv4_df.empty:
+            ipv4_df['src_subnet'] = ipv4_df['source_ip'].apply(
+                lambda x: str(ipaddress.IPv4Network(f"{x}/24", strict=False)))
+            ipv4_df['src_subnet_prefix'] = 24
+            ipv4_df['subnet_efficiency'] = 1.0  # 고정값
+
+        # IPv6 처리
+        if not ipv6_df.empty:
+            ipv6_df['src_subnet'] = ipv6_df['source_ip'].apply(
+                lambda x: str(ipaddress.IPv6Network(f"{x}/64", strict=False)))
+            ipv6_df['src_subnet_prefix'] = 64
+            ipv6_df['subnet_efficiency'] = 1.0  # 고정값
+
+        # 결과 병합
+        if not ipv4_df.empty and not ipv6_df.empty:
+            result_df = pd.concat([ipv4_df, ipv6_df])
+        elif not ipv4_df.empty:
+            result_df = ipv4_df
+        elif not ipv6_df.empty:
+            result_df = ipv6_df
+        else:
+            result_df = df
+
+        return result_df
+    
+    def _cluster_source_ips_ipv4(self, df):
+        """IPv4 소스 IP 동적 클러스터링"""
+        # 목적지 IP와 포트로 그룹화
+        groups = df.groupby(['destination_ip', 'destination_port', 'protocol'])
+        
+        result_rows = []
+        
+        for (dst_ip, dst_port, protocol), group in groups:
+            # 소스 IP 목록 수집
+            source_ips = group['source_ip'].unique()
+            
+            # 최적 서브넷 계산
+            optimal_subnet = self._find_optimal_ipv4_subnet(source_ips)
+            
+            # 각 소스 IP를 최적 서브넷으로 변환
+            for _, row in group.iterrows():
+                src_network = self._get_network_from_ip(row['source_ip'], optimal_subnet['prefix'])
+                row_copy = row.copy()
+                row_copy['src_subnet'] = str(src_network)
+                row_copy['src_subnet_prefix'] = optimal_subnet['prefix']
+                row_copy['subnet_efficiency'] = optimal_subnet['efficiency']
+                result_rows.append(row_copy)
+        
+        return pd.DataFrame(result_rows)
+    
+    def _cluster_source_ips_ipv6(self, df):
+        """IPv6 소스 IP 동적 클러스터링"""
+        # 목적지 IP와 포트로 그룹화
+        groups = df.groupby(['destination_ip', 'destination_port', 'protocol'])
+        
+        result_rows = []
+        
+        for (dst_ip, dst_port, protocol), group in groups:
+            # 소스 IP 목록 수집
+            source_ips = group['source_ip'].unique()
+            
+            # 최적 서브넷 계산 (IPv6는 /128부터 /48까지)
+            optimal_subnet = self._find_optimal_ipv6_subnet(source_ips)
+            
+            # 각 소스 IP를 최적 서브넷으로 변환
+            for _, row in group.iterrows():
+                src_network = self._get_network_from_ip(row['source_ip'], optimal_subnet['prefix'])
+                row_copy = row.copy()
+                row_copy['src_subnet'] = str(src_network)
+                row_copy['src_subnet_prefix'] = optimal_subnet['prefix']
+                row_copy['subnet_efficiency'] = optimal_subnet['efficiency']
+                result_rows.append(row_copy)
+        
+        return pd.DataFrame(result_rows)
+    
+    def _find_optimal_ipv4_subnet(self, source_ips):
+        """
+        IPv4 소스 IP 목록에 대한 최적 서브넷 크기 결정
+        
+        Args:
+            source_ips (list): IPv4 주소 목록
+            
+        Returns:
+            dict: 최적 서브넷 정보 {'prefix': int, 'efficiency': float, 'networks': list}
+        """
+        if len(source_ips) == 1:
+            return {
+                'prefix': 32,
+                'efficiency': 1.0,
+                'networks': [f"{source_ips[0]}/32"]
+            }
+        
+        # IP 주소를 정수로 변환하여 정렬
+        ip_ints = sorted([int(ipaddress.IPv4Address(ip)) for ip in source_ips])
+        
+        best_result = None
+        best_efficiency = 0
+        
+        # /24부터 /32까지 테스트
+        for prefix in range(24, 33):
+            networks = set()
+            
+            # 각 IP가 속하는 네트워크 계산
+            for ip_int in ip_ints:
+                ip = ipaddress.IPv4Address(ip_int)
+                network = ipaddress.IPv4Network(f"{ip}/{prefix}", strict=False)
+                networks.add(network)
+            
+            # 효율성 계산: (실제 IP 수) / (네트워크가 커버하는 총 IP 수)
+            total_coverage = sum(network.num_addresses for network in networks)
+            efficiency = len(source_ips) / total_coverage
+            
+            # 네트워크 개수도 고려 (적은 네트워크 수가 더 좋음)
+            network_penalty = 1 / (1 + len(networks) * 0.1)
+            adjusted_efficiency = efficiency * network_penalty
+            
+            if adjusted_efficiency > best_efficiency:
+                best_efficiency = adjusted_efficiency
+                best_result = {
+                    'prefix': prefix,
+                    'efficiency': efficiency,
+                    'networks': list(networks),
+                    'network_count': len(networks)
+                }
+        
+        return best_result
+    
+    def _find_optimal_ipv6_subnet(self, source_ips):
+        """
+        IPv6 소스 IP 목록에 대한 최적 서브넷 크기 결정
+        
+        Args:
+            source_ips (list): IPv6 주소 목록
+            
+        Returns:
+            dict: 최적 서브넷 정보 {'prefix': int, 'efficiency': float, 'networks': list}
+        """
+        if len(source_ips) == 1:
+            return {
+                'prefix': 128,
+                'efficiency': 1.0,
+                'networks': [f"{source_ips[0]}/128"]
+            }
+        
+        best_result = None
+        best_efficiency = 0
+        
+        # IPv6는 /48, /56, /64, /96, /128 레벨에서 테스트
+        prefixes = [48, 56, 64, 96, 128]
+        
+        for prefix in prefixes:
+            networks = set()
+            
+            # 각 IP가 속하는 네트워크 계산
+            for ip in source_ips:
+                network = ipaddress.IPv6Network(f"{ip}/{prefix}", strict=False)
+                networks.add(network)
+            
+            # IPv6에서는 네트워크 개수만 고려 (주소 공간이 너무 큼)
+            network_count = len(networks)
+            
+            # 효율성: IP 개수 대비 네트워크 개수
+            efficiency = len(source_ips) / network_count
+            
+            if efficiency > best_efficiency:
+                best_efficiency = efficiency
+                best_result = {
+                    'prefix': prefix,
+                    'efficiency': efficiency,
+                    'networks': list(networks),
+                    'network_count': network_count
+                }
+        
+        return best_result
+    
+    def _get_network_from_ip(self, ip, prefix):
+        """IP 주소와 프리픽스로부터 네트워크 주소 계산"""
+        if ':' in ip:  # IPv6
+            return ipaddress.IPv6Network(f"{ip}/{prefix}", strict=False)
+        else:  # IPv4
+            return ipaddress.IPv4Network(f"{ip}/{prefix}", strict=False)
+    
+    def preprocess_data(self):
+        """
+        데이터 전처리 - 동적 서브넷 클러스터링 적용
+        """
+        if self.log_df.empty:
+            logger.error("분석할 데이터가 없습니다!")
+            return self.log_df
+        
+        logger.info("분석을 위한 데이터 전처리 중...")
+        
+        # 필요한 열만 선택
+        cols = ['source_ip', 'destination_ip', 'source_port', 'destination_port', 
+                'protocol', 'source_zone', 'destination_zone', 'is_ipv6']
+        
+        # is_ipv6 열이 없는 경우 추가
+        if 'is_ipv6' not in self.log_df.columns:
+            self.log_df['is_ipv6'] = self.log_df['source_ip'].apply(lambda x: ':' in str(x))
+        
+        df = self.log_df[cols].copy()
+
+        # ICMP 프로토콜 데이터 처리
+        icmp_mask = (df['protocol'] == 'icmp') | (df['protocol'] == 'icmpv6')
+        df.loc[icmp_mask, 'destination_port'] = 0
+        df.loc[icmp_mask, 'source_port'] = 0
+        
+        # 중복 제거 및 나타난 횟수 계산
+        df['occurrence'] = 1
+        df = df.groupby(cols).sum().reset_index()
+        
+        # 최소 발생 횟수 필터링
+        df = df[df['occurrence'] >= self.min_occurrences]
+        
+        # 동적 서브넷 클러스터링 적용
+        df = self.analyze_source_ip_clustering(df)
+        
+        # 기존 IP 정수 변환 로직 유지
+        df['src_ip_int'] = df['source_ip'].apply(self.ip_to_int)
+        df['dst_ip_int'] = df['destination_ip'].apply(self.ip_to_int)
+        
+        # 동적 서브넷을 기반으로 한 정수 변환
+        df['src_subnet_int'] = df.apply(lambda row: self._get_subnet_int(row), axis=1)
+        df['dst_subnet_int'] = df['destination_ip'].apply(
+            lambda x: int(ipaddress.IPv4Network(f"{x}/24", strict=False).network_address) if ':' not in x
+            else int(ipaddress.IPv6Network(f"{x}/64", strict=False).network_address) & ((1 << 64) - 1)
+        )
+        
+        logger.info(f"전처리된 데이터: {len(df)} 고유 트래픽 패턴")
+        return df
+    
+    def _get_subnet_int(self, row):
+        """동적 서브넷을 정수로 변환"""
+        try:
+            if 'src_subnet' in row and pd.notna(row['src_subnet']):
+                network = ipaddress.ip_network(row['src_subnet'])
+                if isinstance(network, ipaddress.IPv4Network):
+                    return int(network.network_address)
+                else:  # IPv6
+                    return int(network.network_address) & ((1 << 64) - 1)
+            else:
+                # fallback
+                return self.ip_to_int(row['source_ip'])
+        except:
+            return self.ip_to_int(row['source_ip'])
+    
+    def analyze_top_traffic_patterns(self, top_n=50):
+        """
+        동적 서브넷을 사용한 상위 트래픽 패턴 분석
+        """
+        if self.clustered_df is None:
+            self.cluster_traffic_patterns()
+        
+        if self.clustered_df.empty:
+            logger.error("분석할 데이터가 없습니다!")
+            return None
+        
+        logger.info(f"상위 {top_n} 트래픽 패턴 분석 중 (동적 서브넷 사용)...")
+        
+        result_dfs = []
+        
+        for is_ipv6 in [False, True]:
+            # 해당 IP 버전의 데이터 필터링
+            if 'is_ipv6' in self.clustered_df.columns:
+                version_df = self.clustered_df[self.clustered_df['is_ipv6'] == is_ipv6].copy()
+            else:
+                version_df = self.clustered_df[self.clustered_df['source_ip'].apply(
+                    lambda x: ':' in str(x)) == is_ipv6].copy()
+            
+            if version_df.empty:
+                continue
+            
+            # 동적 서브넷이 있는 경우 사용, 없으면 기본값 사용
+            if 'src_subnet' not in version_df.columns:
+                if is_ipv6:
+                    version_df['src_subnet'] = version_df['source_ip'].apply(
+                        lambda x: str(ipaddress.IPv6Network(f"{x}/64", strict=False)))
+                else:
+                    version_df['src_subnet'] = version_df['source_ip'].apply(
+                        lambda x: str(ipaddress.IPv4Network(f"{x}/24", strict=False)))
+            
+            # 동적 서브넷 + 목적지 IP + 프로토콜 + 목적지 포트로 그룹화
+            agg_cols = ['src_subnet', 'destination_ip', 'protocol', 'destination_port']
+            traffic_grouped = version_df.groupby(agg_cols).agg({
+                'occurrence': 'sum',
+                'source_ip': lambda x: list(set(x)),
+                'src_subnet_prefix': lambda x: x.iloc[0] if 'src_subnet_prefix' in x else None,
+                'subnet_efficiency': lambda x: x.iloc[0] if 'subnet_efficiency' in x else None
+            }).reset_index()
+            
+            # 트래픽 볼륨으로 정렬
+            traffic_grouped.sort_values('occurrence', ascending=False, inplace=True)
+            
+            # 상위 N개만 선택
+            top_traffic = traffic_grouped.head(top_n).copy()
+            
+            # 전체 트래픽 대비 비율 계산
+            total_traffic = traffic_grouped['occurrence'].sum()
+            top_traffic.loc[:, 'percentage'] = (top_traffic['occurrence'] / max(total_traffic, 1) * 100).round(2)
+            
+            # 소스 IP 개수 계산
+            top_traffic['src_ip_count'] = top_traffic['source_ip'].apply(len)
+            
+            # 포트/프로토콜 정보 포맷팅
+            top_traffic['port_info'] = top_traffic.apply(
+                lambda row: f"{row['destination_port']}({row['protocol']})", axis=1)
+            
+            # 서브넷 효율성 정보 추가
+            top_traffic['subnet_info'] = top_traffic.apply(
+                lambda row: f"{row['src_subnet']} (/{row.get('src_subnet_prefix', 'N/A')}, " +
+                           f"효율성: {row.get('subnet_efficiency', 0):.2f})" 
+                           if pd.notna(row.get('src_subnet_prefix')) else row['src_subnet'], 
+                axis=1
+            )
+            
+            # 필요한 컬럼만 선택
+            result_df = top_traffic[['src_subnet', 'subnet_info', 'destination_ip', 
+                                    'protocol', 'destination_port', 'port_info', 
+                                    'occurrence', 'percentage', 'src_ip_count']].copy()
+            
+            # IP 버전 표시 추가
+            result_df.loc[:, 'is_ipv6'] = is_ipv6
+            
+            result_dfs.append(result_df)
+        
+        if not result_dfs:
+            return pd.DataFrame()
+        
+        return pd.concat(result_dfs)
+    
+    def generate_policy_recommendations(self):
+        """
+        동적 서브넷을 고려한 정책 추천 생성
+        """
+        if self.clustered_df is None or self.clustered_df.empty:
+            logger.warning("정책 추천을 위한 데이터가 없습니다!")
+            return []
+        
+        logger.info("정책 추천 생성 중 (동적 서브넷 적용)...")
+        
+        # 클러스터 ID 목록 (-1은 노이즈 포인트이므로 제외)
+        clusters = sorted(list(set(self.clustered_df['cluster'].values)))
+        clusters = [c for c in clusters if c != -1]
+        
+        recommendations = []
+        
+        # 각 클러스터에 대한 정책 생성
+        for cluster_id in clusters:
+            cluster_data = self.clustered_df[self.clustered_df['cluster'] == cluster_id]
+            
+            if cluster_data.empty:
+                continue
+            
+            # IPv6 정책 여부 확인
+            is_ipv6 = cluster_data['is_ipv6'].iloc[0] if 'is_ipv6' in cluster_data.columns else False
+            
+            # 동적 서브넷 정보 사용
+            if self.enable_dynamic_subnet and 'src_subnet' in cluster_data.columns:
+                # 동적 서브넷 사용
+                src_networks = sorted(list(cluster_data['src_subnet'].unique()))
+            else:
+                # fallback: 기존 방식
+                src_ips = list(cluster_data['source_ip'].unique())
+                src_networks = self.optimize_ip_ranges(src_ips)
+            
+            # 목적지 정보
+            dst_ips = list(cluster_data['destination_ip'].unique())
+            ports = sorted(list(cluster_data['destination_port'].unique()))
+            protocols = sorted(list(cluster_data['protocol'].unique()))
+            
+            # 존 정보
+            src_zones = sorted(list(cluster_data['source_zone'].unique()))
+            dst_zones = sorted(list(cluster_data['destination_zone'].unique()))
+            
+            # 서비스 이름 수집
+            service_names = []
+            for port in ports:
+                if port in WELL_KNOWN_PORTS:
+                    service_name = WELL_KNOWN_PORTS[port]
+                    if service_name not in service_names:
+                        service_names.append(service_name)
+            
+            if not service_names:
+                service_names = protocols
+            
+            # 포트 범위 최적화
+            port_ranges = self.optimize_port_ranges(ports)
+            
+            # 목적지 IP 범위 최적화
+            dst_networks = self.optimize_ip_ranges(dst_ips)
+            
+            # 정책 이름 생성
+            policy_name = self.generate_descriptive_policy_name(
+                dst_networks, port_ranges, protocols, service_names, cluster_id, is_ipv6)
+            
+            # 정책 정보 생성
+            policy = {
+                'name': policy_name,
+                'id': f"C{cluster_id}",
+                'src_networks': src_networks,
+                'dst_networks': dst_networks,
+                'port_ranges': port_ranges,
+                'protocols': protocols,
+                'service_names': service_names,
+                'src_zones': src_zones,
+                'dst_zones': dst_zones,
+                'is_ipv6': is_ipv6,
+                'traffic_count': cluster_data['occurrence'].sum(),
+                # 동적 서브넷 메타데이터 추가
+                'metadata': {
+                    'dynamic_subnets': True,
+                    'src_subnet_efficiency': cluster_data.get('subnet_efficiency', pd.Series(dtype='float64')).mean()
+                }
+            }
+            
+            recommendations.append(policy)
+        
+        # 트래픽 양에 따라 정책 정렬
+        recommendations.sort(key=lambda x: x['traffic_count'], reverse=True)
+        
+        self.policies = recommendations
+        
+        logger.info(f"{len(recommendations)}개의 정책 추천 생성 완료")
+        return recommendations
     
     def visualize_traffic_sankey(self, output_prefix='traffic_sankey'):
         """
