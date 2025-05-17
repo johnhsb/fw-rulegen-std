@@ -81,6 +81,43 @@
     pre.border {
         font-family: 'Consolas', 'Monaco', 'Lucida Console', monospace;
     }
+
+    /* 로그 파일 목록에 스크롤바 추가 */
+    .log-files-container {
+        background-color: #1a1a1a;
+        padding: 10px;
+        border-radius: 5px;
+        height: 300px; /* 로그 콘솔과 동일한 높이 */
+        overflow-y: auto;
+        border: 1px solid #30363d;
+    }
+    
+    /* 로그 파일 목록에 동일한 스크롤바 스타일 적용 */
+    .log-files-container::-webkit-scrollbar {
+        width: 8px;
+    }
+    .log-files-container::-webkit-scrollbar-track {
+        background: #0d1117;
+    }
+    .log-files-container::-webkit-scrollbar-thumb {
+        background: #30363d;
+        border-radius: 4px;
+    }
+    .log-files-container::-webkit-scrollbar-thumb:hover {
+        background: #484f58;
+    }
+    
+    /* 로그 파일 리스트 아이템 스타일 개선 */
+    .log-files-container .list-group-item {
+        padding: 8px 10px;
+        margin-bottom: 5px;
+    }
+    
+    /* 카드 바디 패딩 조정 */
+    .log-files-card .card-body {
+        padding: 10px;
+    }
+
 </style>
 {% endblock %}
 
@@ -226,12 +263,12 @@ set system syslog host structured-data
             </div>
         </div>
         
-        <div class="card">
+        <div class="card log-files-card">
             <div class="card-header">
                 <h5 class="mb-0">수집된 로그 파일</h5>
             </div>
             <div class="card-body">
-                <div id="logFilesList">
+                <div class="log-files-container" id="logFilesList">
                     <div class="d-flex justify-content-center">
                         <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">로딩 중...</span>
@@ -313,8 +350,8 @@ function loadLogFiles() {
                 var html = '<ul class="list-group">';
                 response.files.forEach(function(file) {
                     html += '<li class="list-group-item d-flex justify-content-between align-items-center">' +
-                        file.filename +
-                        '<span class="badge bg-primary rounded-pill">' + formatFileSize(file.size) + '</span>' +
+                        '<div class="text-truncate" title="' + file.filename + '">' + file.filename + '</div>' +
+                        '<span class="badge bg-primary rounded-pill ms-2">' + formatFileSize(file.size) + '</span>' +
                         '</li>';
                 });
                 html += '</ul>';
