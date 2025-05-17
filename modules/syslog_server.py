@@ -25,13 +25,14 @@ logger = logging.getLogger(__name__)
 class SyslogServer:
     """Syslog 메시지를 수신하고 저장하는 서버"""
     
-    def __init__(self, host='0.0.0.0', port=514, log_dir='./logs', 
+    def __init__(self, host='0.0.0.0', port=514, log_dir='./logs',
                  analysis_interval=3600, output_dir='./output',
                  device_filter='', device_filter_type='all',
-                 regex_filter='', regex_filter_type='include'):
+                 regex_filter='', regex_filter_type='include',
+                 retention_days=7, max_file_size_mb=200):
         """
         초기화
-        
+    
         Args:
             host (str): 바인딩할 호스트 주소
             port (int): 바인딩할 포트 번호
@@ -42,6 +43,8 @@ class SyslogServer:
             device_filter_type (str): 필터 타입 ('include' 또는 'exclude')
             regex_filter (str): 정규식 필터
             regex_filter_type (str): 정규식 필터 타입 ('include' 또는 'exclude')
+            retention_days (int): 로그 파일 보관 기간 (일)
+            max_file_size_mb (int): 로그 파일 최대 크기 (MB)
         """
         self.host = host
         self.port = port
@@ -52,7 +55,10 @@ class SyslogServer:
         self.device_filter_type = device_filter_type
         self.regex_filter = regex_filter.strip()
         self.regex_filter_type = regex_filter_type
-
+        self.retention_days = retention_days
+        self.max_file_size_mb = max_file_size_mb
+        self.max_file_size_bytes = max_file_size_mb * 1024 * 1024  # MB -> 바이트
+    
         # 정규식 패턴 컴파일 (성능 향상을 위해)
         self.regex_pattern = None
         if self.regex_filter:
@@ -61,19 +67,25 @@ class SyslogServer:
             except re.error as e:
                 logger.error(f"정규식 컴파일 오류: {e}")
                 self.regex_pattern = None
-        
+    
         # Syslog용 UDP 소켓
         self.sock = None
-        
+    
         # 로그 파일 핸들
         self.log_files = {}
-        
+    
+        # 현재 로그 파일 크기 트래킹
+        self.log_file_sizes = {}
+    
         # 서버 상태
         self.running = False
-        
+    
         # 마지막 자동 분석 시간
         self.last_analysis_time = datetime.now()
-        
+    
+        # 마지막 로그 정리 시간
+        self.last_cleanup_time = datetime.now()
+    
         # 자동 분석 스레드
         self.analysis_thread = None
     
@@ -200,7 +212,7 @@ class SyslogServer:
                     return
         
         # 날짜 확인
-        today = datetime.now().strftime('%Y%m%d')
+        today = datetime.now().strftime('%Y%m%d%H%M%S')
         
         # 필터에 맞는 메시지를 로그 파일에 기록
         # 장비명이 있으면 장비명_날짜.log, 없으면 All_날짜.log로 저장
@@ -209,42 +221,76 @@ class SyslogServer:
         device_match = re.search(r'^.*?(\w+(?:-\w+)*)\s+RT_FLOW:', message)
         if device_match:
             device_name = device_match.group(1)
-        
-        log_file_name = f"{device_name}_{today}.log"
-        log_file_path = os.path.join(self.log_dir, log_file_name)
-        
-        # 로그 파일 핸들 가져오기 또는 생성
-        if log_file_path not in self.log_files:
+
+        # 장비별 현재 로그 파일 확인
+        current_log_file = None
+        for file_path, file_handle in self.log_files.items():
+            if file_path.startswith(os.path.join(self.log_dir, f"{device_name}_")):
+                current_log_file = file_path
+                break
+
+        # 현재 로그 파일이 없거나 최대 크기를 초과한 경우 새 파일 생성
+        if current_log_file is None or (current_log_file in self.log_file_sizes and
+                                       self.log_file_sizes[current_log_file] >= self.max_file_size_bytes):
+            if current_log_file is not None:
+                # 기존 파일 핸들 닫기
+                try:
+                    self.log_files[current_log_file].close()
+                    del self.log_files[current_log_file]
+                    del self.log_file_sizes[current_log_file]
+                    logger.info(f"최대 크기 도달로 로그 파일 닫힘: {current_log_file}")
+                except Exception as e:
+                    logger.error(f"파일 핸들 닫기 오류 {current_log_file}: {e}")
+
+            # 새 로그 파일 생성
+            log_file_name = f"{device_name}_{timestamp}.log"
+            log_file_path = os.path.join(self.log_dir, log_file_name)
+
             try:
                 file_handle = open(log_file_path, 'a', encoding='utf-8')
                 self.log_files[log_file_path] = file_handle
-                logger.info(f"로그 파일 생성됨: {log_file_path}")
+                self.log_file_sizes[log_file_path] = 0
+                logger.info(f"새 로그 파일 생성됨: {log_file_path}")
             except Exception as e:
                 logger.error(f"로그 파일 생성 오류 {log_file_path}: {e}")
                 return
-        
+
+            current_log_file = log_file_path
+
         # 메시지 로그 파일에 기록
         try:
-            self.log_files[log_file_path].write(message + '\n')
-            self.log_files[log_file_path].flush()
+            message_bytes = (message + '\n').encode('utf-8')
+            message_size = len(message_bytes)
+
+            self.log_files[current_log_file].write(message + '\n')
+            self.log_files[current_log_file].flush()
+
+            # 파일 크기 업데이트
+            self.log_file_sizes[current_log_file] += message_size
         except Exception as e:
-            logger.error(f"로그 파일 쓰기 오류 {log_file_path}: {e}")
+            logger.error(f"로그 파일 쓰기 오류 {current_log_file}: {e}")
     
     def run_analysis_thread(self):
         """자동 분석 스레드 실행"""
         while self.running:
             # 분석 주기 확인
             now = datetime.now()
-            time_since_last = now - self.last_analysis_time
-            
-            if time_since_last.total_seconds() >= self.analysis_interval:
+            time_since_last_analysis = now - self.last_analysis_time
+        
+            if time_since_last_analysis.total_seconds() >= self.analysis_interval:
                 # 분석 수행
                 self.perform_automatic_analysis()
                 self.last_analysis_time = now
-            
+        
+            # 매 시간마다 로그 정리 수행
+            time_since_last_cleanup = now - self.last_cleanup_time
+            if time_since_last_cleanup.total_seconds() >= 3600:  # 1시간
+                self.cleanup_old_logs()
+                self.last_cleanup_time = now
+        
             # 잠시 대기 (10초 간격으로 체크)
             time.sleep(10)
-    
+
     def sanitize_for_json(self, obj):
         """
         JSON 직렬화를 위해 numpy 타입 등을 파이썬 기본 타입으로 변환
@@ -269,42 +315,74 @@ class SyslogServer:
             return obj.tolist()
         else:
             return obj
-    
+
     def perform_automatic_analysis(self):
         """자동 로그 분석 수행"""
         logger.info("자동 로그 분석 시작...")
-        
+    
         try:
-            # 오래된 로그 파일 핸들 닫기
-            today = datetime.now().strftime('%Y%m%d')
-            
+            # 오래된 로그 파일 핸들 닫기 - 기존 코드 유지
             for file_path, file_handle in list(self.log_files.items()):
-                if today not in os.path.basename(file_path):
+                # 파일이 1시간 이상 지났으면 핸들 닫기 (분석을 위해)
+                file_name = os.path.basename(file_path)
+                if len(file_name) > 15:  # 장비명_20250515182217.log 형식 확인
                     try:
-                        file_handle.close()
-                        del self.log_files[file_path]
-                        logger.info(f"오래된 로그 파일 핸들 닫힘: {file_path}")
-                    except Exception as e:
-                        logger.error(f"파일 핸들 닫기 오류 {file_path}: {e}")
-            
+                        timestamp_str = file_name.split('_')[1].split('.')[0]
+                        file_time = datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
+                        if (datetime.now() - file_time).total_seconds() > 3600:  # 1시간
+                            try:
+                                file_handle.close()
+                                del self.log_files[file_path]
+                                if file_path in self.log_file_sizes:
+                                    del self.log_file_sizes[file_path]
+                                logger.info(f"오래된 로그 파일 핸들 닫힘: {file_path}")
+                            except Exception as e:
+                                logger.error(f"파일 핸들 닫기 오류 {file_path}: {e}")
+                    except (ValueError, IndexError):
+                        pass
+    
+            # 로그 파일 정리 (보관 기간 적용)
+            self.cleanup_old_logs()
+    
             # 로그 파일 목록 가져오기
             log_files = []
             for filename in os.listdir(self.log_dir):
                 if filename.endswith('.log'):
                     log_files.append(os.path.join(self.log_dir, filename))
-            
+    
             if not log_files:
                 logger.info("분석할 로그 파일이 없습니다.")
                 return
-            
+    
+            # 각 로그 파일별로 개별 분석
+            for log_file in log_files:
+                self.analyze_single_log_file(log_file)
+    
+        except Exception as e:
+            logger.error(f"자동 분석 오류: {e}")
+    
+    def analyze_single_log_file(self, log_file):
+        """
+        단일 로그 파일 분석
+    
+        Args:
+            log_file (str): 분석할 로그 파일 경로
+        """
+        logger.info(f"로그 파일 분석 시작: {log_file}")
+    
+        try:
             # 로그 파싱
-            parser = LogParser(log_files=log_files)
+            parser = LogParser(log_files=[log_file])
             log_df = parser.process_logs()
-            
+    
             if log_df.empty:
-                logger.warning("파싱된 로그 데이터가 없습니다.")
+                logger.warning(f"파싱된 로그 데이터가 없습니다: {log_file}")
                 return
-            
+    
+            # 파일명에서 장비정보 추출
+            file_basename = os.path.basename(log_file)
+            device_name = file_basename.split('_')[0]
+    
             # 클러스터링 파라미터 설정
             params = {
                 'min_occurrences': 1,
@@ -312,36 +390,33 @@ class SyslogServer:
                 'min_samples': 2,
                 'max_data_points': 10000
             }
-            
+    
             # 트래픽 분석
             analyzer = TrafficAnalyzer(log_df, **params)
             analyzer.cluster_traffic_patterns()
-            
+    
             # 상위 트래픽 패턴 분석
             top_traffic_df = analyzer.analyze_top_traffic_patterns(top_n=30)
-            
+    
             # 정책 추천 생성
             policies = analyzer.generate_policy_recommendations()
-            
+    
             # 시각화 생성
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_prefix = os.path.join(self.output_dir, f"auto_analysis_{timestamp}")
-            
+            output_prefix = os.path.join(self.output_dir, f"auto_analysis_{device_name}_{timestamp}")
+    
             # Sankey 다이어그램
             sankey_files = analyzer.visualize_traffic_sankey(output_prefix + "_sankey")
-            
+    
             # 3D 인터랙티브 시각화
             viz_files = analyzer.visualize_traffic_patterns_3d_interactive(output_prefix + "_3d")
-
+    
             # 장비명 정보 수집
-            device_names = list(log_df['device_name'].unique()) if 'device_name' in log_df.columns else []
-        
+            device_names = list(log_df['device_name'].unique()) if 'device_name' in log_df.columns else [device_name]
+    
             # 로그 파일명만 추출 (경로 제외)
-            log_filenames = [os.path.basename(f) for f in log_files]
-        
-            # 필터 적용 여부 (Syslog 서버의 경우)
-            filters_applied = bool(self.device_filter or self.regex_filter)
-            
+            log_filenames = [os.path.basename(log_file)]
+    
             # 분석 결과 저장
             result = {
                 'timestamp': timestamp,
@@ -353,29 +428,83 @@ class SyslogServer:
                     'interactive_3d': viz_files
                 },
                 'source': 'syslog',
-                'log_files': log_files,
-                'log_filenames': log_filenames,  # 파일명만
-                'device_names': device_names,  # 장비명 목록
-                'filters_applied': filters_applied,  # 필터 적용 여부
-                'total_log_records': len(log_df),  # 전체 로그 수
-                'filtered_log_records': len(log_df),  # 필터링 후 로그 수 (Syslog의 경우 동일)
-                'syslog_filters': {  # Syslog 특정 필터 정보
+                'log_files': [log_file],
+                'log_filenames': log_filenames,
+                'device_names': device_names,
+                'filters_applied': False,
+                'total_log_records': len(log_df),
+                'filtered_log_records': len(log_df),
+                'syslog_filters': {
                     'device_filter': self.device_filter,
                     'device_filter_type': self.device_filter_type,
                     'regex_filter': self.regex_filter,
                     'regex_filter_type': self.regex_filter_type
                 }
             }
-            
-            # numpy 타입 등을 JSON 직렬화 가능한 기본 타입으로 변환
-            sanitized_result = self.sanitize_for_json(result)
-            
+    
             # 결과 파일 저장
-            result_file = os.path.join(self.output_dir, f"analysis_{timestamp}.json")
+            result_file = os.path.join(self.output_dir, f"analysis_{device_name}_{timestamp}.json")
             with open(result_file, 'w') as f:
-                json.dump(sanitized_result, f, indent=2)
-            
-            logger.info(f"자동 분석 완료. 결과 저장됨: {result_file}")
-            
+                json.dump(result, f, indent=2)
+    
+            logger.info(f"로그 파일 분석 완료: {log_file}, 결과 저장됨: {result_file}")
+    
         except Exception as e:
-            logger.error(f"자동 분석 오류: {e}")
+            logger.error(f"로그 파일 분석 오류 {log_file}: {e}")
+
+    def cleanup_old_logs(self):
+        """
+        보관 기간이 지난 로그 파일 삭제
+        """
+        logger.info(f"오래된 로그 파일 정리 (보관 기간: {self.retention_days}일)")
+    
+        try:
+            now = datetime.now()
+            cutoff_time = now - timedelta(days=self.retention_days)
+            deleted_count = 0
+    
+            for filename in os.listdir(self.log_dir):
+                if not filename.endswith('.log'):
+                    continue
+    
+                file_path = os.path.join(self.log_dir, filename)
+    
+                try:
+                    # 파일 생성 시간 확인
+                    file_mtime = datetime.fromtimestamp(os.path.getmtime(file_path))
+    
+                    # 파일명에서 타임스탬프 추출 시도
+                    parts = filename.split('_')
+                    if len(parts) > 1:
+                        try:
+                            timestamp_str = parts[1].split('.')[0]
+                            file_time = datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
+                        except (ValueError, IndexError):
+                            # 파일명에서 추출 실패 시 수정 시간 사용
+                            file_time = file_mtime
+                    else:
+                        file_time = file_mtime
+    
+                    # 보관 기간보다 오래된 파일 삭제
+                    if file_time < cutoff_time:
+                        # 파일이 현재 열려있는지 확인
+                        if file_path in self.log_files:
+                            try:
+                                self.log_files[file_path].close()
+                                del self.log_files[file_path]
+                                if file_path in self.log_file_sizes:
+                                    del self.log_file_sizes[file_path]
+                            except Exception as e:
+                                logger.error(f"파일 핸들 닫기 오류 {file_path}: {e}")
+    
+                        # 파일 삭제
+                        os.remove(file_path)
+                        deleted_count += 1
+                        logger.info(f"오래된 로그 파일 삭제됨: {file_path}")
+                except Exception as e:
+                    logger.error(f"로그 파일 정리 중 오류 {file_path}: {e}")
+    
+            logger.info(f"로그 파일 정리 완료: {deleted_count}개 파일 삭제됨")
+    
+        except Exception as e:
+            logger.error(f"로그 파일 정리 오류: {e}")
