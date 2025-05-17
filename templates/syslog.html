@@ -187,14 +187,9 @@
                 
                 <div class="divider"></div>
                 
-                <h5>로그 콘솔</h5>
+                <h5>시스템 로그 콘솔</h5>
                 <div class="log-console" id="logConsole">
-                    # Syslog 서버 로그가 여기에 표시됩니다.
-                    {% if is_running %}
-                    # 서버가 실행 중입니다. ({{ syslog_config.host }}:{{ syslog_config.port }})
-                    {% else %}
-                    # 서버가 중지되었습니다. 시작하려면 '서버 시작' 버튼을 클릭하세요.
-                    {% endif %}
+                     로그를 불러오는 중..
                 </div>
             </div>
         </div>
@@ -293,11 +288,13 @@ $(document).ready(function() {
     
     // 로그 파일 목록 로드
     loadLogFiles();
+
+    // 처음 페이지 로드 시 로그 콘솔 업데이트
+    updateLogConsole();
     
     // 주기적으로 로그 콘솔 업데이트
-    if ({{ is_running|tojson }}) {
-        setInterval(updateLogConsole, 5000);
-    }
+    setInterval(updateLogConsole, 5000);
+
 });
 
 function resetButton($button, action) {
@@ -333,22 +330,54 @@ function loadLogFiles() {
 }
 
 function updateLogConsole() {
-    var now = new Date().toLocaleTimeString();
-    var logConsole = $('#logConsole');
-    
-    // 최대 20라인만 표시
-    var lines = logConsole.html().split('\n');
-    if (lines.length > 20) {
-        lines = lines.slice(lines.length - 20);
-    }
-    
-    // 새 로그 라인 추가
-    lines.push('# ' + now + ' - Syslog 서버가 실행 중입니다.');
-    
-    logConsole.html(lines.join('\n'));
-    
-    // 스크롤을 아래로 이동
-    logConsole.scrollTop(logConsole[0].scrollHeight);
+    $.ajax({
+        url: '/api/system_logs',
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success && response.log_content) {
+                var logConsole = $('#logConsole');
+                
+                // 로그 내용 표시
+                var logHtml = '';
+                response.log_content.forEach(function(line) {
+                    // HTML 특수문자 이스케이프 처리
+                    line = line.replace(/&/g, '&amp;')
+                               .replace(/</g, '&lt;')
+                               .replace(/>/g, '&gt;')
+                               .replace(/"/g, '&quot;')
+                               .replace(/'/g, '&#039;');
+                    
+                    // 오류 로그는 빨간색으로 표시
+                    if (line.includes('ERROR') || line.includes('CRITICAL')) {
+                        logHtml += '<span style="color: #ff6b6b;">' + line + '</span><br>';
+                    }
+                    // 경고 로그는 노란색으로 표시
+                    else if (line.includes('WARNING')) {
+                        logHtml += '<span style="color: #ffd43b;">' + line + '</span><br>';
+                    }
+                    // 정보 로그는 기본 색상(파란색)으로 표시
+                    else if (line.includes('INFO')) {
+                        logHtml += '<span style="color: #58a6ff;">' + line + '</span><br>';
+                    }
+                    // 기타 로그는 회색으로 표시
+                    else {
+                        logHtml += '<span style="color: #adb5bd;">' + line + '</span><br>';
+                    }
+                });
+                
+                logConsole.html(logHtml);
+                
+                // 스크롤을 아래로 이동
+                logConsole.scrollTop(logConsole[0].scrollHeight);
+            }
+        },
+        error: function() {
+            var logConsole = $('#logConsole');
+            logConsole.append('<span style="color: #ff6b6b;">로그 파일을 읽는 중 오류가 발생했습니다.</span><br>');
+            logConsole.scrollTop(logConsole[0].scrollHeight);
+        }
+    });
 }
 
 function formatFileSize(size) {

@@ -392,6 +392,33 @@ def api_log_files():
         'files': files
     })
 
+@app.route('/api/system_logs')
+@login_required
+def api_system_logs():
+    """시스템 로그 파일 내용 반환 API"""
+    try:
+        # 로그 파일 경로
+        log_file = "firewall_recommender.log"
+
+        # 표시할 최대 라인 수 (옵션으로 쿼리 파라미터로 받을 수 있음)
+        max_lines = request.args.get('max_lines', 50, type=int)
+
+        # 로그 파일이 존재하는지 확인
+        if not os.path.exists(log_file):
+            return jsonify({'error': '로그 파일을 찾을 수 없습니다.'}), 404
+
+        # 파일의 마지막 N 라인 읽기 (tail 기능)
+        with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+            # 마지막 max_lines 개수만큼만 가져오기
+            log_content = lines[-max_lines:] if len(lines) > max_lines else lines
+
+        return jsonify({'success': True, 'log_content': log_content})
+
+    except Exception as e:
+        logger.error(f"로그 파일 읽기 오류: {e}")
+        return jsonify({'error': f'로그 파일을 읽는 중 오류가 발생했습니다: {str(e)}'}), 500
+
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():

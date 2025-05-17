@@ -1,0 +1,30 @@
+[Unit]
+Description=ML기반 방화벽 정책 추천 시스템
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=firewall
+Group=firewall
+WorkingDirectory=/opt/fwrule-recommender
+ExecStart=/usr/bin/python3 /opt/fwrule-recommender/app.py --host 0.0.0.0 --port 14000 --ssl-cert /opt/fwrule-recommender/ssl/cert.pem --ssl-key /opt/fwrule-recommender/ssl/key.pem
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fwrule-recommender
+Environment="PYTHONPATH=/opt/fwrule-recommender"
+Environment="FLASK_ENV=production"
+
+# 파일 생성 권한
+UMask=0027
+
+# 보안 강화 설정
+PrivateTmp=true
+ProtectSystem=full
+NoNewPrivileges=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
