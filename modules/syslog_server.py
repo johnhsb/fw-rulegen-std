@@ -14,6 +14,7 @@ import logging
 import threading
 import time
 import json
+import numpy as np
 from datetime import datetime, timedelta
 
 from modules.log_parser import LogParser
@@ -244,6 +245,31 @@ class SyslogServer:
             # 잠시 대기 (10초 간격으로 체크)
             time.sleep(10)
     
+    def sanitize_for_json(self, obj):
+        """
+        JSON 직렬화를 위해 numpy 타입 등을 파이썬 기본 타입으로 변환
+        
+        Args:
+            obj: 변환할 객체
+            
+        Returns:
+            변환된 객체
+        """
+        if isinstance(obj, dict):
+            return {k: self.sanitize_for_json(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self.sanitize_for_json(v) for v in obj]
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return obj
+    
     def perform_automatic_analysis(self):
         """자동 로그 분석 수행"""
         logger.info("자동 로그 분석 시작...")
@@ -341,13 +367,15 @@ class SyslogServer:
                 }
             }
             
+            # numpy 타입 등을 JSON 직렬화 가능한 기본 타입으로 변환
+            sanitized_result = self.sanitize_for_json(result)
+            
             # 결과 파일 저장
             result_file = os.path.join(self.output_dir, f"analysis_{timestamp}.json")
             with open(result_file, 'w') as f:
-                json.dump(result, f, indent=2)
+                json.dump(sanitized_result, f, indent=2)
             
             logger.info(f"자동 분석 완료. 결과 저장됨: {result_file}")
             
         except Exception as e:
             logger.error(f"자동 분석 오류: {e}")
-
