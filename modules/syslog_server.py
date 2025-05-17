@@ -212,7 +212,7 @@ class SyslogServer:
                     return
         
         # 날짜 확인
-        today = datetime.now().strftime('%Y%m%d%H%M%S')
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
         
         # 필터에 맞는 메시지를 로그 파일에 기록
         # 장비명이 있으면 장비명_날짜.log, 없으면 All_날짜.log로 저장
