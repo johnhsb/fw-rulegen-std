@@ -58,6 +58,9 @@ class SyslogServer:
         self.retention_days = retention_days
         self.max_file_size_mb = max_file_size_mb
         self.max_file_size_bytes = max_file_size_mb * 1024 * 1024  # MB -> 바이트
+        # 분석된 로그 파일 목록을 저장할 속성 추가
+        self.analyzed_logs_file = os.path.join(output_dir, 'analyzed_logs.json')
+        self.analyzed_logs = self._load_analyzed_logs()
     
         # 정규식 패턴 컴파일 (성능 향상을 위해)
         self.regex_pattern = None
@@ -323,40 +326,37 @@ class SyslogServer:
         try:
             # 오래된 로그 파일 핸들 닫기 - 기존 코드 유지
             for file_path, file_handle in list(self.log_files.items()):
-                # 파일이 1시간 이상 지났으면 핸들 닫기 (분석을 위해)
-                file_name = os.path.basename(file_path)
-                if len(file_name) > 15:  # 장비명_20250515182217.log 형식 확인
-                    try:
-                        timestamp_str = file_name.split('_')[1].split('.')[0]
-                        file_time = datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
-                        if (datetime.now() - file_time).total_seconds() > 3600:  # 1시간
-                            try:
-                                file_handle.close()
-                                del self.log_files[file_path]
-                                if file_path in self.log_file_sizes:
-                                    del self.log_file_sizes[file_path]
-                                logger.info(f"오래된 로그 파일 핸들 닫힘: {file_path}")
-                            except Exception as e:
-                                logger.error(f"파일 핸들 닫기 오류 {file_path}: {e}")
-                    except (ValueError, IndexError):
-                        pass
-    
+                # 기존 코드 유지...
+            
             # 로그 파일 정리 (보관 기간 적용)
             self.cleanup_old_logs()
     
-            # 로그 파일 목록 가져오기
+            # 로그 파일 목록 가져오기 - 이전에 분석되지 않은 파일만 필터링
             log_files = []
             for filename in os.listdir(self.log_dir):
                 if filename.endswith('.log'):
-                    log_files.append(os.path.join(self.log_dir, filename))
+                    log_path = os.path.join(self.log_dir, filename)
+                    # 이전 분석에서 이미 사용한 로그 파일은 제외
+                    if log_path not in self.analyzed_logs:
+                        log_files.append(log_path)
     
             if not log_files:
-                logger.info("분석할 로그 파일이 없습니다.")
+                logger.info("분석할 새로운 로그 파일이 없습니다.")
                 return
+    
+            logger.info(f"{len(log_files)}개의 새로운 로그 파일 분석 중...")
     
             # 각 로그 파일별로 개별 분석
             for log_file in log_files:
                 self.analyze_single_log_file(log_file)
+                # 분석된 로그 파일 목록에 추가
+                self.analyzed_logs.append(log_file)
+            
+            # 분석된 로그 파일 목록 저장
+            self._save_analyzed_logs()
+            
+            # 현재 열려 있는 로그 파일 모두 닫고 새 로그 파일 생성
+            self._rotate_log_files()
     
         except Exception as e:
             logger.error(f"자동 분석 오류: {e}")
@@ -462,6 +462,7 @@ class SyslogServer:
             now = datetime.now()
             cutoff_time = now - timedelta(days=self.retention_days)
             deleted_count = 0
+            deleted_files = []  # 삭제된 파일 목록 추적
     
             for filename in os.listdir(self.log_dir):
                 if not filename.endswith('.log'):
@@ -500,11 +501,59 @@ class SyslogServer:
                         # 파일 삭제
                         os.remove(file_path)
                         deleted_count += 1
+                        deleted_files.append(file_path)  # 삭제된 파일 목록에 추가
                         logger.info(f"오래된 로그 파일 삭제됨: {file_path}")
+
                 except Exception as e:
                     logger.error(f"로그 파일 정리 중 오류 {file_path}: {e}")
     
             logger.info(f"로그 파일 정리 완료: {deleted_count}개 파일 삭제됨")
+            # 분석된 로그 파일 목록에서 삭제된 파일 제거
+            if hasattr(self, 'analyzed_logs') and deleted_files:
+                self.analyzed_logs = [log for log in self.analyzed_logs if log not in deleted_files]
+                self._save_analyzed_logs()
     
         except Exception as e:
             logger.error(f"로그 파일 정리 오류: {e}")
+
+    def _load_analyzed_logs(self):
+        """
+        분석된 로그 파일 목록을 로드
+        """
+        if os.path.exists(self.analyzed_logs_file):
+            try:
+                with open(self.analyzed_logs_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"분석된 로그 파일 목록 로드 오류: {e}")
+        return []
+    
+    def _save_analyzed_logs(self):
+        """
+        분석된 로그 파일 목록을 저장
+        """
+        try:
+            with open(self.analyzed_logs_file, 'w') as f:
+                json.dump(self.analyzed_logs, f)
+        except Exception as e:
+            logger.error(f"분석된 로그 파일 목록 저장 오류: {e}")
+
+    def _rotate_log_files(self):
+        """
+        현재 열려 있는 로그 파일을 모두 닫고 새 로그 파일 생성 준비
+        """
+        logger.info("로그 파일 순환 중...")
+        
+        # 현재 열려 있는 모든 로그 파일 핸들 닫기
+        for file_path, file_handle in list(self.log_files.items()):
+            try:
+                file_handle.close()
+                del self.log_files[file_path]
+                if file_path in self.log_file_sizes:
+                    del self.log_file_sizes[file_path]
+                logger.info(f"로그 파일 닫힘: {file_path}")
+            except Exception as e:
+                logger.error(f"파일 핸들 닫기 오류 {file_path}: {e}")
+        
+        # 새 로그 파일은 다음 메시지가 도착할 때 자동으로 생성됨
+        logger.info("로그 파일 순환 완료. 새 로그 파일은 다음 메시지 수신 시 생성됩니다.")
