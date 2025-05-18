@@ -737,11 +737,20 @@ def get_analyses_list(source_type):
                 
                 # source 필드가 일치하는 항목만 선택
                 if data.get('source') == source_type:
-                    timestamp = filename.replace('analysis_', '').replace('.json', '')
+                    # 파일명에서 타임스탬프 추출 - 마지막 부분만 사용
+                    parts = filename.replace('analysis_', '').replace('.json', '').split('_')
+                    timestamp = parts[-1]  # 마지막 부분이 타임스탬프
+                    
+                    if 'timestamp' in data:
+                        timestamp = data['timestamp']
+                    
+                    # 날짜와 시간 분리
+                    date_part = timestamp[:8] if len(timestamp) >= 8 else ""
+                    time_part = timestamp[9:] if len(timestamp) >= 15 else ""
                     analyses.append({
                         'timestamp': timestamp,
-                        'date': timestamp[:8],  # YYYYMMDD 부분
-                        'time': timestamp[9:],  # HHMMSS 부분
+                        'date': date_part,  # YYYYMMDD 부분
+                        'time': time_part,  # HHMMSS 부분
                         'policies_count': len(data.get('policies', [])),
                         'file_path': file_path,
                         'log_filenames': data.get('log_filenames', []),
