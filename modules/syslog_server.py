@@ -460,8 +460,11 @@ class SyslogServer:
     
             # 결과 파일 저장
             result_file = os.path.join(self.output_dir, f"analysis_{device_name}_{timestamp}.json")
+            # 데이터 정리 과정 추가 (NumPy 객체 처리)
+            sanitized_result = self.sanitize_for_json(result)
+
             with open(result_file, 'w') as f:
-                json.dump(result, f, indent=2)
+                json.dump(sanitized_result, f, indent=2)
     
             logger.info(f"로그 파일 분석 완료: {log_file}, 결과 저장됨: {result_file}")
     
