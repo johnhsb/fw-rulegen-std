@@ -160,6 +160,13 @@ def analyze_logs():
     # 타임스탬프로 특정 분석 결과 보기
     timestamp = request.args.get('timestamp')
     if timestamp:
+        # 분석 결과 파일 존재 확인
+        analysis_result = load_analysis_result(timestamp)
+        if not analysis_result:
+            logger.warning(f"요청된 타임스탬프에 대한 분석 결과 없음: {timestamp}")
+            flash('요청한 분석 결과를 찾을 수 없습니다.', 'warning')
+            return redirect(url_for('index'))
+            
         # 분석 결과 파일 찾기 및 표시
         return render_template('analyze.html', 
                               timestamp=timestamp,
@@ -186,14 +193,51 @@ def api_analyze_logs():
     # top_n 파라미터 가져오기 (추가)
     top_n = int(request.form.get('top_n', 50))
 
-    # 로그 파일 확인
-    uploaded_files = session.get('uploaded_files', [])
-    if not uploaded_files:
-        return jsonify({'error': '로그 파일을 먼저 업로드해 주세요'}), 400
+    # 타임스탬프 확인 - 기존 분석 결과 재분석 여부 확인
+    previous_timestamp = request.form.get('timestamp')
+    
+    # 로그 파일 목록 초기화
+    log_files = []
+    source_type = 'upload'  # 기본값
+    
+    if previous_timestamp:
+        logger.info(f"기존 분석 결과({previous_timestamp})에 새 필터 적용 시도")
+        # 기존 분석 결과에서 로그 파일 경로 가져오기
+        analysis_result = load_analysis_result(previous_timestamp)
+        
+        if analysis_result and 'log_files' in analysis_result:
+            log_files = analysis_result.get('log_files', [])
+            source_type = analysis_result.get('source', 'upload')
+            
+            # 모든 로그 파일이 존재하는지 확인
+            all_files_exist = all(os.path.exists(file_path) for file_path in log_files)
+            
+            if not all_files_exist:
+                # 일부 파일이 없는 경우
+                missing_files = [file_path for file_path in log_files if not os.path.exists(file_path)]
+                logger.warning(f"일부 원본 로그 파일을 찾을 수 없습니다: {missing_files}")
+                
+                if source_type == 'upload':
+                    return jsonify({'error': '원본 로그 파일을 찾을 수 없습니다. 파일을 다시 업로드해주세요.'}), 400
+                else:  # syslog
+                    return jsonify({'error': '원본 Syslog 파일을 찾을 수 없습니다. 새로운 로그가 수집되기를 기다리거나 다른 분석 결과를 선택하세요.'}), 400
+            
+            logger.info(f"기존 분석 결과에서 {len(log_files)}개의 로그 파일 경로 로드")
+    
+    # 타임스탬프가 없거나 해당 타임스탬프의 로그 파일이 없는 경우
+    if not log_files:
+        # 기존 로직: 업로드된 파일 확인
+        uploaded_files = session.get('uploaded_files', [])
+        
+        if not uploaded_files:
+            return jsonify({'error': '로그 파일을 먼저 업로드해 주세요'}), 400
+            
+        log_files = uploaded_files
+        logger.info(f"세션에서 {len(log_files)}개의 업로드된 로그 파일 경로 로드")
 
     try:
         # 로그 파싱
-        parser = LogParser(log_dir=Config.UPLOAD_DIR)
+        parser = LogParser(log_files=log_files)  # 수정된 부분: log_dir 대신 log_files 직접 전달
         log_df = parser.process_logs()
 
         if log_df.empty:
@@ -234,7 +278,7 @@ def api_analyze_logs():
         ])
 
         # 로그 파일명만 추출 (경로 제외)
-        log_filenames = [os.path.basename(f) for f in uploaded_files]
+        log_filenames = [os.path.basename(f) for f in log_files]
 
         # 분석 결과 저장
         save_analysis_results(timestamp, {
@@ -244,8 +288,8 @@ def api_analyze_logs():
             'config': config,
             'top_traffic': top_traffic_df.to_dict('records') if top_traffic_df is not None else [],
             'visualizations': visualizations,
-            'source': 'upload',
-            'log_files': uploaded_files,  # 전체 경로
+            'source': source_type,  # 기존 분석의 소스 타입 유지
+            'log_files': log_files,  # 전체 경로
             'log_filenames': log_filenames,  # 파일명만
             'device_names': device_names,  # 장비명 목록
             'filters_applied': filters_applied,  # 필터 적용 여부
@@ -752,11 +796,32 @@ def save_analysis_results(timestamp, data):
 
 def load_analysis_result(timestamp):
     """저장된 분석 결과 불러오기"""
+    # 정확히 일치하는 파일명 먼저 확인
     metadata_file = os.path.join(Config.OUTPUT_DIR, f"analysis_{timestamp}.json")
     
     if os.path.exists(metadata_file):
         with open(metadata_file, 'r') as f:
             return json.load(f)
+    
+    # 일치하는 파일이 없으면 타임스탬프가 포함된 파일 검색
+    for filename in os.listdir(Config.OUTPUT_DIR):
+        if filename.startswith('analysis_') and filename.endswith('.json'):
+            # 파일명에서 타임스탬프 부분 추출
+            file_parts = filename.replace('analysis_', '').replace('.json', '').split('_')
+            if len(file_parts) >= 3:  # [장비명, 날짜, 시간] 형태
+                file_timestamp = f"{file_parts[-2]}_{file_parts[-1]}"
+                if file_timestamp == timestamp:
+                    file_path = os.path.join(Config.OUTPUT_DIR, filename)
+                    with open(file_path, 'r') as f:
+                        return json.load(f)
+    
+    # 타임스탬프 형식이 다를 수 있으므로 타임스탬프 부분 확인
+    for filename in os.listdir(Config.OUTPUT_DIR):
+        if filename.startswith('analysis_') and filename.endswith('.json'):
+            if timestamp in filename:
+                file_path = os.path.join(Config.OUTPUT_DIR, filename)
+                with open(file_path, 'r') as f:
+                    return json.load(f)
     
     return None
 

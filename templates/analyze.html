@@ -123,6 +123,9 @@
     </div>
     <div class="card-body">
         <form id="analyzeForm" method="post">
+            {% if timestamp %}
+            <input type="hidden" name="timestamp" value="{{ timestamp }}">
+            {% endif %}
             <div class="row">
                 <div class="col-md-6">
                     <div class="filter-section">

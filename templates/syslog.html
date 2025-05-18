@@ -244,7 +244,6 @@ set system syslog host syslog_server
 set system syslog host transport udp
 set system syslog host port {{ syslog_config.port }}
 set system syslog host any any
-set system syslog host structured-data                    
                 </pre>
                 
                 <h6 class="mt-4">설정 방법</h6>
@@ -252,11 +251,12 @@ set system syslog host structured-data
                     <li>서버 IP와 포트를 확인합니다.</li>
                     <li>방화벽에 위 명령을 적용합니다.</li>
                     <li>방화벽에서 이 서버로 Syslog를 전송하는지 확인합니다.</li>
-                    <li>분석서버 상단 방화벽에서 {{ syslog_config.port }}포트가 허용되어 있는지 확인합니다.</li>
+                    <li>분석서버와 상단 방화벽에서 UDP {{ syslog_config.port }}포트가 허용되어 있는지를 확인합니다.</li>
                 </ol>
                 
                 <div class="alert alert-info mt-3">
-                    <i class="bi bi-info-circle"></i> 수집된 로그는 자동으로 분석되어 대시보드에 표시됩니다.
+                    <i class="bi bi-info-circle"></i> 구형 장비와의 호환성을 위해 주니퍼 Standard System Log 형식만 지원합니다.<br>
+                    <i class="bi bi-info-circle"></i> 수집된 로그는 자동 분석되어 대시보드에 표시됩니다.<br>
                     {% if syslog_config.regex_filter %}
                     <br><strong>정규식 필터가 적용됨:</strong> {{ syslog_config.regex_filter }} ({{ syslog_config.regex_filter_type }})
                     {% endif %}
