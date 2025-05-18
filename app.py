@@ -270,6 +270,37 @@ def api_analyze_logs():
         logger.error(f"API 분석 오류: {e}", exc_info=True)
         return jsonify({'error': f'분석 중 오류가 발생했습니다: {str(e)}'}), 500
 
+@app.route('/api/analysis_data')
+@login_required
+def api_analysis_data():
+    """타임스탬프로 분석 데이터 가져오기"""
+    timestamp = request.args.get('timestamp')
+    if not timestamp:
+        return jsonify({'error': '타임스탬프가 필요합니다'}), 400
+    
+    # 타임스탬프로 해당하는 분석 파일 검색
+    analysis_file = None
+    for filename in os.listdir(Config.OUTPUT_DIR):
+        if filename.startswith('analysis_') and filename.endswith('.json'):
+            # 파일명에서 타임스탬프 부분 추출
+            file_parts = filename.replace('analysis_', '').replace('.json', '').split('_')
+            if len(file_parts) >= 3:  # [장비명, 날짜, 시간] 형태
+                file_timestamp = f"{file_parts[-2]}_{file_parts[-1]}"
+                if file_timestamp == timestamp:
+                    analysis_file = os.path.join(Config.OUTPUT_DIR, filename)
+                    break
+    
+    if not analysis_file:
+        return jsonify({'error': '해당 타임스탬프의 분석 결과를 찾을 수 없습니다'}), 404
+    
+    try:
+        with open(analysis_file, 'r') as f:
+            analysis_data = json.load(f)
+        return jsonify(analysis_data)
+    except Exception as e:
+        logger.error(f"분석 데이터 로드 오류: {e}")
+        return jsonify({'error': '분석 데이터를 로드하는 중 오류가 발생했습니다'}), 500
+
 @app.route('/policies')
 @login_required
 def view_policies():

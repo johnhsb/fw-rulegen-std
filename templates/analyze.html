@@ -566,7 +566,7 @@ function loadVisualizationData(timestamp) {
     $('#ipv6-viz3d-iframe').attr('src', '/static/output/traffic_3d_interactive_' + timestamp + '_ipv6.html');
     
     // 트래픽 데이터 로드
-    $.getJSON('/static/output/analysis_' + timestamp + '.json', function(data) {
+    $.getJSON('/api/analysis_data?timestamp=' + timestamp, function(data) {
         if (data.top_traffic) {
             // 트래픽 데이터를 IPv4와 IPv6로 분리
             var ipv4Traffic = data.top_traffic.filter(function(item) {
@@ -603,8 +603,12 @@ function loadVisualizationData(timestamp) {
             });
             $('#ipv6-traffic-body').html(ipv6Html || '<tr><td colspan="5" class="text-center">IPv6 트래픽 데이터가 없습니다.</td></tr>');
         }
-    }).fail(function() {
-        alert('분석 데이터를 로드하는 중 오류가 발생했습니다.');
+    }).fail(function(xhr) {
+        var errorMsg = '분석 데이터를 로드하는 중 오류가 발생했습니다.';
+        if (xhr.responseJSON && xhr.responseJSON.error) {
+            errorMsg = xhr.responseJSON.error;
+        }
+        alert(errorMsg);
     });
 }
 </script>
