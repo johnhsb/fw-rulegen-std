@@ -214,11 +214,12 @@ class SyslogServer:
                 if match:
                     return
         
-        # 날짜 확인
-        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        # 날짜와 시간 분리하여 생성 - 수정된 부분
+        current_time = datetime.now()
+        date_str = current_time.strftime('%Y%m%d')
+        time_str = current_time.strftime('%H%M%S')
         
-        # 필터에 맞는 메시지를 로그 파일에 기록
-        # 장비명이 있으면 장비명_날짜.log, 없으면 All_날짜.log로 저장
+        # 장비명이 있으면 장비명_날짜_시간.log, 없으면 All_날짜_시간.log로 저장
         device_name = "All"
         
         device_match = re.search(r'^.*?(\w+(?:-\w+)*)\s+RT_FLOW:', message)
@@ -245,8 +246,8 @@ class SyslogServer:
                 except Exception as e:
                     logger.error(f"파일 핸들 닫기 오류 {current_log_file}: {e}")
 
-            # 새 로그 파일 생성
-            log_file_name = f"{device_name}_{timestamp}.log"
+            # 새 로그 파일 생성 - 수정된 이름 형식
+            log_file_name = f"{device_name}_{date_str}_{time_str}.log"
             log_file_path = os.path.join(self.log_dir, log_file_name)
 
             try:
@@ -324,25 +325,29 @@ class SyslogServer:
         logger.info("자동 로그 분석 시작...")
     
         try:
-            # 오래된 로그 파일 핸들 닫기 - 기존 코드 유지
+            # 오래된 로그 파일 핸들 닫기 - 수정된 파일명 파싱 적용
             for file_path, file_handle in list(self.log_files.items()):
                 # 파일이 1시간 이상 지났으면 핸들 닫기 (분석을 위해)
                 file_name = os.path.basename(file_path)
-                if len(file_name) > 15:  # 장비명_20250515182217.log 형식 확인
-                    try:
-                        timestamp_str = file_name.split('_')[1].split('.')[0]
-                        file_time = datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
-                        if (datetime.now() - file_time).total_seconds() > 3600:  # 1시간
-                            try:
-                                file_handle.close()
-                                del self.log_files[file_path]
-                                if file_path in self.log_file_sizes:
-                                    del self.log_file_sizes[file_path]
-                                logger.info(f"오래된 로그 파일 핸들 닫힘: {file_path}")
-                            except Exception as e:
-                                logger.error(f"파일 핸들 닫기 오류 {file_path}: {e}")
-                    except (ValueError, IndexError):
-                        pass
+                # 파일명 "장비명_YYYYMMDD_HHMMSS.log" 형식 파싱
+                parts = file_name.rsplit('_', 2)
+                if len(parts) == 3:  # [장비명, 날짜, 시간.log] 형태
+                    date_str = parts[1]
+                    time_str = parts[2].split('.')[0]  # .log 제거
+                    if len(date_str) == 8 and date_str.isdigit():
+                        try:
+                            file_time = datetime.strptime(f"{date_str}_{time_str}", '%Y%m%d_%H%M%S')
+                            if (datetime.now() - file_time).total_seconds() > 3600:  # 1시간
+                                try:
+                                    file_handle.close()
+                                    del self.log_files[file_path]
+                                    if file_path in self.log_file_sizes:
+                                        del self.log_file_sizes[file_path]
+                                    logger.info(f"오래된 로그 파일 핸들 닫힘: {file_path}")
+                                except Exception as e:
+                                    logger.error(f"파일 핸들 닫기 오류 {file_path}: {e}")
+                        except (ValueError, IndexError):
+                            logger.warning(f"파일명 파싱 오류: {file_name}")
             
             # 로그 파일 정리 (보관 기간 적용)
             self.cleanup_old_logs()
@@ -395,9 +400,26 @@ class SyslogServer:
                 logger.warning(f"파싱된 로그 데이터가 없습니다: {log_file}")
                 return
     
-            # 파일명에서 장비정보 추출
-            file_basename = os.path.basename(log_file)
-            device_name = file_basename.split('_')[0]
+            # 파일명에서 장비정보 추출 - 수정된 방식
+            file_basename = os.path.basename(log_file)  # 예: "P_FW_1_20250517_123045.log"
+            
+            # .log 확장자 제거
+            file_name_without_ext = file_basename.rsplit('.', 1)[0]  # 예: "P_FW_1_20250517_123045"
+            
+            # 맨 오른쪽에서 2번째 '_'를 기준으로 분리
+            parts = file_name_without_ext.rsplit('_', 2)  # ['P_FW_1', '20250517', '123045']
+            
+            if len(parts) == 3:  # [장비명, 날짜, 시간] 형태로 분리됨
+                device_name = parts[0]  # 장비명
+                date_part = parts[1]    # YYYYMMDD
+                time_part = parts[2]    # HHMMSS
+                
+                # 타임스탬프 생성
+                timestamp = f"{date_part}_{time_part}"  # YYYYMMDD_HHMMSS 형식
+            else:
+                # 형식이 예상과 다른 경우 기본값 사용
+                device_name = file_name_without_ext  # 전체 이름 사용
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  # 현재 시간 사용
     
             # 클러스터링 파라미터 설정
             params = {
@@ -417,9 +439,7 @@ class SyslogServer:
             # 정책 추천 생성
             policies = analyzer.generate_policy_recommendations()
     
-            # 시각화 생성
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            # 파일 이름 형식 - analyze.html과 일치하도록 변경
+            # 시각화 생성 - 파일 이름 형식 수정
             sankey_prefix = os.path.join(self.output_dir, f"traffic_sankey_{timestamp}")
             viz3d_prefix = os.path.join(self.output_dir, f"traffic_3d_interactive_{timestamp}")
     
@@ -460,7 +480,7 @@ class SyslogServer:
                 }
             }
     
-            # 결과 파일 저장
+            # 결과 파일 저장 - 장비명을 파일명에 포함
             result_file = os.path.join(self.output_dir, f"analysis_{device_name}_{timestamp}.json")
             # 데이터 정리 과정 추가 (NumPy 객체 처리)
             sanitized_result = self.sanitize_for_json(result)
@@ -492,20 +512,24 @@ class SyslogServer:
                 file_path = os.path.join(self.log_dir, filename)
     
                 try:
-                    # 파일 생성 시간 확인
-                    file_mtime = datetime.fromtimestamp(os.path.getmtime(file_path))
-    
-                    # 파일명에서 타임스탬프 추출 시도
-                    parts = filename.split('_')
-                    if len(parts) > 1:
-                        try:
-                            timestamp_str = parts[1].split('.')[0]
-                            file_time = datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
-                        except (ValueError, IndexError):
-                            # 파일명에서 추출 실패 시 수정 시간 사용
-                            file_time = file_mtime
+                    # 파일명에서 타임스탬프 추출 - 수정
+                    parts = filename.rsplit('_', 2)  # 예: ['장비명', '20250517', '123045.log']
+                    
+                    if len(parts) == 3:
+                        date_str = parts[1]  # YYYYMMDD
+                        time_str = parts[2].split('.')[0]  # HHMMSS (.log 제거)
+                        
+                        if len(date_str) == 8 and date_str.isdigit():
+                            try:
+                                file_time = datetime.strptime(f"{date_str}_{time_str}", '%Y%m%d_%H%M%S')
+                            except ValueError:
+                                # 파싱 실패 시 파일 수정 시간 사용
+                                file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                        else:
+                            file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
                     else:
-                        file_time = file_mtime
+                        # 파일명 형식이 예상과 다를 경우 수정 시간 사용
+                        file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
     
                     # 보관 기간보다 오래된 파일 삭제
                     if file_time < cutoff_time:

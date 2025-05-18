@@ -672,6 +672,13 @@ def create_visualizations(analyzer, timestamp):
     """시각화 생성 (Sankey, 3D 등)"""
     visualizations = {}
     
+    # 타임스탬프 형식이 YYYYMMDD_HHMMSS인지 확인하고 필요시 변환
+    if '_' not in timestamp:
+        # 형식이 다르면 언더스코어 추가
+        date_part = timestamp[:8]
+        time_part = timestamp[8:] if len(timestamp) > 8 else ''
+        timestamp = f"{date_part}_{time_part}"
+    
     # Sankey 다이어그램
     sankey_prefix = os.path.join(Config.OUTPUT_DIR, f"traffic_sankey_{timestamp}")
     sankey_files = analyzer.visualize_traffic_sankey(sankey_prefix)
@@ -737,16 +744,33 @@ def get_analyses_list(source_type):
                 
                 # source 필드가 일치하는 항목만 선택
                 if data.get('source') == source_type:
-                    # 파일명에서 타임스탬프 추출 - 마지막 부분만 사용
+                    # 파일명에서 타임스탬프 추출 - 수정된 부분
+                    # 파일명 형식: analysis_장비명_날짜_시간.json
                     parts = filename.replace('analysis_', '').replace('.json', '').split('_')
-                    timestamp = parts[-1]  # 마지막 부분이 타임스탬프
                     
+                    # 파일명에 날짜와 시간이 있는 경우 (최소 3개 부분이 있어야 함)
+                    if len(parts) >= 3:
+                        # 마지막 두 부분을 날짜와 시간으로 사용
+                        date_part = parts[-2]  # YYYYMMDD 부분
+                        time_part = parts[-1]  # HHMMSS 부분
+                        timestamp = f"{date_part}_{time_part}"
+                    else:
+                        # 형식이 다른 경우 전체를 타임스탬프로 사용
+                        timestamp = '_'.join(parts)
+                    
+                    # 분석 결과에서 실제 타임스탬프 사용 (더 정확함)
                     if 'timestamp' in data:
                         timestamp = data['timestamp']
                     
                     # 날짜와 시간 분리
-                    date_part = timestamp[:8] if len(timestamp) >= 8 else ""
-                    time_part = timestamp[9:] if len(timestamp) >= 15 else ""
+                    timestamp_parts = timestamp.split('_')
+                    if len(timestamp_parts) >= 2:
+                        date_part = timestamp_parts[0]
+                        time_part = timestamp_parts[1]
+                    else:
+                        date_part = timestamp[:8] if len(timestamp) >= 8 else ""
+                        time_part = timestamp[9:] if len(timestamp) >= 15 else ""
+                    
                     analyses.append({
                         'timestamp': timestamp,
                         'date': date_part,  # YYYYMMDD 부분
@@ -759,7 +783,8 @@ def get_analyses_list(source_type):
                         'total_records': data.get('total_log_records', 0),
                         'filtered_records': data.get('filtered_log_records', 0)
                     })
-            except:
+            except Exception as e:
+                logger.error(f"분석 결과 로드 오류: {e}")
                 continue
     
     # 최신 분석 결과가 먼저 오도록 정렬
