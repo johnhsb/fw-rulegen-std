@@ -489,7 +489,7 @@ $(document).ready(function() {
 });
 
 function loadFilterValues(timestamp) {
-    $.getJSON('/static/output/analysis_' + timestamp + '.json', function(data) {
+    $.getJSON('/api/analysis_data?timestamp=' + timestamp, function(data) {
         if (data.filters) {
             var filters = data.filters;
             
