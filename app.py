@@ -785,14 +785,20 @@ def save_analysis_results(timestamp, data):
             return super().default(obj)
 
     os.makedirs(Config.OUTPUT_DIR, exist_ok=True)
+
+    # 장비명 정보 추출 (첫 번째 장비명 또는 "All" 사용)
+    device_name = "All"
+    if 'device_names' in data and data['device_names']:
+        device_name = data['device_names'][0]
     
-    # 분석 메타데이터 저장
-    metadata_file = os.path.join(Config.OUTPUT_DIR, f"analysis_{timestamp}.json")
+    # 분석 메타데이터 저장 - 장비명 포함
+    metadata_file = os.path.join(Config.OUTPUT_DIR, f"analysis_{device_name}_{timestamp}.json")
     with open(metadata_file, 'w') as f:
         json.dump(data, f, indent=2, cls=NumpyEncoder)
     
     logger.info(f"Analysis results saved to {metadata_file}")
     return metadata_file
+    
 
 def load_analysis_result(timestamp):
     """저장된 분석 결과 불러오기"""
