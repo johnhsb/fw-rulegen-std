@@ -27,7 +27,7 @@ from modules.log_parser import LogParser
 from modules.traffic_analyzer import TrafficAnalyzer
 from modules.policy_generator import PolicyGenerator
 from modules.syslog_server import SyslogServer
-from config.config import Config
+from config.config import Config, load_system_settings, save_system_settings
 
 # 로깅 설정
 logging.basicConfig(
@@ -73,6 +73,21 @@ global_state = {
 # 필요한 디렉토리 생성
 for directory in [Config.UPLOAD_DIR, Config.OUTPUT_DIR, Config.LOGS_DIR]:
     os.makedirs(directory, exist_ok=True)
+
+# 저장된 설정 로드
+saved_settings = load_system_settings()
+
+# DBSCAN 파라미터 적용
+if 'dbscan_params' in saved_settings:
+    global_state['dbscan_params'].update(saved_settings['dbscan_params'])
+
+# Syslog 설정 적용
+if 'syslog_config' in saved_settings:
+    global_state['syslog_config'].update(saved_settings['syslog_config'])
+    
+# 출력 디렉토리 설정 적용
+if 'output_dir' in saved_settings:
+    Config.OUTPUT_DIR = saved_settings['output_dir']
 
 # 사용자 목록 로드
 users = load_user_config(Config.USERS_CONFIG)
@@ -422,23 +437,30 @@ def manage_syslog():
                     'regex_filter_type': regex_filter_type
                 })
                 
+                # 설정 영구 저장
+                settings_dict = {
+                    'dbscan_params': global_state['dbscan_params'],
+                    'output_dir': Config.OUTPUT_DIR,
+                    'syslog_config': global_state['syslog_config']
+                }
+                save_system_settings(settings_dict)
+                
                 # Syslog 서버 시작
                 start_syslog_server()
                 
                 return jsonify({'success': True})
-                
             except Exception as e:
                 logger.error(f"Syslog server error: {e}")
                 return jsonify({'error': f'Syslog 서버 오류: {str(e)}'}), 500
-                
+
         elif action == 'stop':
             # 서버 중지
             if not global_state['is_syslog_running']:
                 return jsonify({'error': 'Syslog 서버가 실행 중이 아닙니다'}), 400
-            
+
             stop_syslog_server()
             return jsonify({'success': True})
-    
+
     # GET 메서드는 설정 페이지 표시
     return render_template('syslog.html',
                           is_running=global_state['is_syslog_running'],
@@ -507,9 +529,27 @@ def settings():
                 'min_samples': int(request.form.get('min_samples', 2)),
                 'max_data_points': int(request.form.get('max_data_points', 10000))
             })
+
+            # Syslog 설정 업데이트
+            global_state['syslog_config'].update({
+                'host': request.form.get('syslog_host', global_state['syslog_config']['host']),
+                'port': int(request.form.get('syslog_port', global_state['syslog_config']['port'])),
+                'interval': int(request.form.get('syslog_interval', global_state['syslog_config']['interval']))
+            })
             
             # 기타 설정 업데이트 (디렉토리 등)
             Config.OUTPUT_DIR = request.form.get('output_dir', Config.OUTPUT_DIR)
+            retention_days = int(request.form.get('retention_days', 30))
+            
+            # 설정 저장 - Syslog 설정도 함께 저장
+            settings_dict = {
+                'dbscan_params': global_state['dbscan_params'],
+                'output_dir': Config.OUTPUT_DIR,
+                'retention_days': retention_days,
+                'syslog_config': global_state['syslog_config']
+            }
+            
+            save_system_settings(settings_dict)
             
             return jsonify({'success': True})
         except Exception as e:
@@ -518,7 +558,71 @@ def settings():
     # GET 메서드는 설정 페이지 표시
     return render_template('settings.html',
                           dbscan_params=global_state['dbscan_params'],
-                          output_dir=Config.OUTPUT_DIR)
+                          output_dir=Config.OUTPUT_DIR,
+                          syslog_config=global_state['syslog_config'])
+
+@app.route('/api/system_info')
+@login_required
+def api_system_info():
+    """시스템 정보 반환"""
+    import psutil
+    
+    try:
+        # 디스크 사용량
+        disk_usage = psutil.disk_usage(Config.BASE_DIR)
+        disk_usage_str = f"{disk_usage.used / (1024**3):.1f}GB / {disk_usage.total / (1024**3):.1f}GB ({disk_usage.percent}%)"
+        
+        # 메모리 사용량
+        memory = psutil.virtual_memory()
+        memory_usage_str = f"{memory.used / (1024**3):.1f}GB / {memory.total / (1024**3):.1f}GB ({memory.percent}%)"
+        
+        return jsonify({
+            'success': True,
+            'disk_usage': disk_usage_str,
+            'memory_usage': memory_usage_str
+        })
+    except Exception as e:
+        logger.error(f"시스템 정보 조회 오류: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/cleanup', methods=['POST'])
+@login_required
+def api_cleanup():
+    """오래된 데이터 정리"""
+    try:
+        retention_days = int(request.form.get('retention_days', 30))
+        if retention_days < 1:
+            return jsonify({'success': False, 'error': '보관 일수는 1일 이상이어야 합니다'})
+        
+        # 파일 정리 로직 구현
+        cutoff_date = datetime.now() - timedelta(days=retention_days)
+        deleted_count = 0
+        
+        # 출력 디렉토리 정리
+        for filename in os.listdir(Config.OUTPUT_DIR):
+            file_path = os.path.join(Config.OUTPUT_DIR, filename)
+            if os.path.isfile(file_path):
+                file_mtime = datetime.fromtimestamp(os.path.getmtime(file_path))
+                if file_mtime < cutoff_date:
+                    os.remove(file_path)
+                    deleted_count += 1
+        
+        # 로그 디렉토리 정리
+        for filename in os.listdir(Config.LOGS_DIR):
+            file_path = os.path.join(Config.LOGS_DIR, filename)
+            if os.path.isfile(file_path):
+                file_mtime = datetime.fromtimestamp(os.path.getmtime(file_path))
+                if file_mtime < cutoff_date:
+                    os.remove(file_path)
+                    deleted_count += 1
+        
+        return jsonify({
+            'success': True,
+            'message': f'{deleted_count}개의 파일이 삭제되었습니다.'
+        })
+    except Exception as e:
+        logger.error(f"데이터 정리 오류: {e}")
+        return jsonify({'success': False, 'error': str(e)})
 
 #----- 유틸리티 함수 -----#
 

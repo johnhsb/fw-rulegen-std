@@ -146,6 +146,37 @@
                     </div>
                 </div>
             </div>
+            <div class="card settings-card">
+                <div class="card-header">
+                    <h5 class="mb-0">Syslog 서버 설정</h5>
+                </div>
+                <div class="card-body">
+                    <div class="settings-section">
+                        <div class="setting-title">서버 기본 설정</div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="syslog_host" class="form-label">호스트 주소</label>
+                                <input type="text" class="form-control" id="syslog_host" name="syslog_host" value="{{ syslog_config.host }}">
+                                <div class="form-text">Syslog 서버가 바인딩할 IP 주소</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="syslog_port" class="form-label">포트</label>
+                                <input type="number" class="form-control" id="syslog_port" name="syslog_port" value="{{ syslog_config.port }}" min="1" max="65535">
+                                <div class="form-text">Syslog 서버 포트 (기본: 514)</div>
+                            </div>
+                        </div>
+                    </div>
+        
+                    <div class="settings-section">
+                        <div class="setting-title">분석 설정</div>
+                        <div class="mb-3">
+                            <label for="syslog_interval" class="form-label">자동 분석 주기 (초)</label>
+                            <input type="number" class="form-control" id="syslog_interval" name="syslog_interval" value="{{ syslog_config.interval }}" min="300">
+                            <div class="form-text">Syslog 로그의 자동 분석 주기 (최소 300초)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div class="col-lg-6">
@@ -237,6 +268,11 @@ $(document).ready(function() {
         e.preventDefault();
         
         var formData = $(this).serialize();
+
+        // Syslog 설정 추가
+        formData += '&syslog_host=' + $('#syslog_host').val();
+        formData += '&syslog_port=' + $('#syslog_port').val();
+        formData += '&syslog_interval=' + $('#syslog_interval').val();
         
         $.ajax({
             url: '/settings',
