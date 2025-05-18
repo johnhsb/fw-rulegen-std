@@ -240,7 +240,7 @@
             <div class="card-body">
                 <h6>주니퍼 방화벽 설정</h6>
                 <pre class="border p-2">
-set system syslog host {{ syslog_config.host }}
+set system syslog host syslog_server
 set system syslog host transport udp
 set system syslog host port {{ syslog_config.port }}
 set system syslog host any any
@@ -252,6 +252,7 @@ set system syslog host structured-data
                     <li>서버 IP와 포트를 확인합니다.</li>
                     <li>방화벽에 위 명령을 적용합니다.</li>
                     <li>방화벽에서 이 서버로 Syslog를 전송하는지 확인합니다.</li>
+                    <li>분석서버 상단 방화벽에서 {{ syslog_config.port }}포트가 허용되어 있는지 확인합니다.</li>
                 </ol>
                 
                 <div class="alert alert-info mt-3">

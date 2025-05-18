@@ -419,13 +419,15 @@ class SyslogServer:
     
             # 시각화 생성
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_prefix = os.path.join(self.output_dir, f"auto_analysis_{device_name}_{timestamp}")
+            # 파일 이름 형식 - analyze.html과 일치하도록 변경
+            sankey_prefix = os.path.join(self.output_dir, f"traffic_sankey_{timestamp}")
+            viz3d_prefix = os.path.join(self.output_dir, f"traffic_3d_interactive_{timestamp}")
     
             # Sankey 다이어그램
-            sankey_files = analyzer.visualize_traffic_sankey(output_prefix + "_sankey")
+            sankey_files = analyzer.visualize_traffic_sankey(sankey_prefix)
     
             # 3D 인터랙티브 시각화
-            viz_files = analyzer.visualize_traffic_patterns_3d_interactive(output_prefix + "_3d")
+            viz_files = analyzer.visualize_traffic_patterns_3d_interactive(viz3d_prefix)
     
             # 장비명 정보 수집
             device_names = list(log_df['device_name'].unique()) if 'device_name' in log_df.columns else [device_name]
