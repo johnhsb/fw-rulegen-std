@@ -326,7 +326,23 @@ class SyslogServer:
         try:
             # 오래된 로그 파일 핸들 닫기 - 기존 코드 유지
             for file_path, file_handle in list(self.log_files.items()):
-                # 기존 코드 유지...
+                # 파일이 1시간 이상 지났으면 핸들 닫기 (분석을 위해)
+                file_name = os.path.basename(file_path)
+                if len(file_name) > 15:  # 장비명_20250515182217.log 형식 확인
+                    try:
+                        timestamp_str = file_name.split('_')[1].split('.')[0]
+                        file_time = datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
+                        if (datetime.now() - file_time).total_seconds() > 3600:  # 1시간
+                            try:
+                                file_handle.close()
+                                del self.log_files[file_path]
+                                if file_path in self.log_file_sizes:
+                                    del self.log_file_sizes[file_path]
+                                logger.info(f"오래된 로그 파일 핸들 닫힘: {file_path}")
+                            except Exception as e:
+                                logger.error(f"파일 핸들 닫기 오류 {file_path}: {e}")
+                    except (ValueError, IndexError):
+                        pass
             
             # 로그 파일 정리 (보관 기간 적용)
             self.cleanup_old_logs()
