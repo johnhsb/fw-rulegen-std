@@ -16,7 +16,7 @@ import ipaddress
 import pandas as pd
 from datetime import datetime, timedelta
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file, make_response, abort
 from flask_session import Session
 from gevent.pywsgi import WSGIServer
 import ssl
@@ -359,6 +359,73 @@ def api_analysis_data():
     except Exception as e:
         logger.error(f"분석 데이터 로드 오류: {e}")
         return jsonify({'error': '분석 데이터를 로드하는 중 오류가 발생했습니다'}), 500
+
+@app.route('/visualization/<path:filename>')
+def serve_visualization(filename):
+    """시각화 파일 제공 (없는 경우 동적으로 생성)"""
+    # 실제 파일 경로 구성
+    full_path = os.path.join(Config.OUTPUT_DIR, filename)
+    
+    # 파일이 존재하면 그대로 전송
+    if os.path.exists(full_path):
+        return send_file(full_path)
+    
+    # IPv6 관련 시각화 파일인지 확인
+    if '_ipv6.html' in filename:
+        # 시각화 타입 판별
+        viz_type = "데이터 시각화"
+        if 'sankey' in filename:
+            viz_type = "Sankey 다이어그램"
+        elif '3d_interactive' in filename:
+            viz_type = "3D 트래픽 시각화"
+        
+        # 동적 HTML 생성
+        html_content = f"""
+        <!DOCTYPE html>
+        <html lang="ko" data-bs-theme="dark">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>IPv6 데이터 없음</title>
+            <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+            <link rel="stylesheet" href="/static/css/bootstrap-icons.css">
+            <link rel="stylesheet" href="/static/css/style.css">
+            <style>
+                body {{
+                    background-color: #121212 !important; /* 다크 모드 배경색 강제 적용 */
+                    color: #e0e0e0;
+                }}
+                .card {{
+                    background-color: #1e1e1e;
+                    border-color: #333;
+                }}
+            </style>
+        </head>
+        <body class="d-flex justify-content-center align-items-center" style="height: 100vh;">
+            <div class="card shadow-lg">
+                <div class="card-header bg-primary">
+                    <h4 class="mb-0 text-white text-center">IPv6 {viz_type}</h4>
+                </div>
+                <div class="card-body text-center p-4">
+                    <i class="bi bi-info-circle text-info" style="font-size: 48px;"></i>
+                    <h5 class="mt-3">IPv6 데이터가 없습니다</h5>
+                    <p class="mb-0">현재 분석 결과에는 IPv6 트래픽 데이터가 포함되어 있지 않습니다.</p>
+                    <p class="mt-2">IPv4 데이터만 있거나 IPv6 트래픽이 분석되지 않았을 수 있습니다.</p>
+                </div>
+            </div>
+            <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+        </body>
+        </html>
+        """
+        
+        # 응답 생성 및 반환
+        response = make_response(html_content)
+        response.headers['Content-Type'] = 'text/html'
+        response.headers['Cache-Control'] = 'max-age=3600'  # 1시간 캐싱
+        return response
+    
+    # 그 외 파일은 404 반환
+    return abort(404)
 
 @app.route('/policies')
 @login_required

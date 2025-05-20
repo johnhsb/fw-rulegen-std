@@ -480,6 +480,31 @@ $(document).ready(function() {
             }
         });
     });
+
+    // 탭 전환 시 해당 콘텐츠만 로드
+    $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function(e) {
+        var target = $(e.target).attr('data-bs-target');
+        
+        // Sankey 다이어그램 탭
+        if (target === '#sankey' && !$(target).data('loaded')) {
+            $(target).data('loaded', true);
+            $('#ipv4-sankey-iframe').attr('src', '/visualization/traffic_sankey_' + timestamp + '_ipv4.html');
+            // IPv6 탭은 클릭할 때만 로드
+            $('#ipv6-sankey-tab').one('shown.bs.tab', function() {
+                $('#ipv6-sankey-iframe').attr('src', '/visualization/traffic_sankey_' + timestamp + '_ipv6.html');
+            });
+        }
+        
+        // 3D 시각화 탭
+        if (target === '#viz3d' && !$(target).data('loaded')) {
+            $(target).data('loaded', true);
+            $('#ipv4-viz3d-iframe').attr('src', '/visualization/traffic_3d_interactive_' + timestamp + '_ipv4.html');
+            // IPv6 탭은 클릭할 때만 로드
+            $('#ipv6-viz3d-tab').one('shown.bs.tab', function() {
+                $('#ipv6-viz3d-iframe').attr('src', '/visualization/traffic_3d_interactive_' + timestamp + '_ipv6.html');
+            });
+        }
+    });
     
     {% if timestamp %}
     // 타임스탬프가 있으면 시각화 데이터 로드
@@ -561,12 +586,12 @@ function loadFilterValues(timestamp) {
 
 function loadVisualizationData(timestamp) {
     // Sankey 다이어그램 URL 설정
-    $('#ipv4-sankey-iframe').attr('src', '/static/output/traffic_sankey_' + timestamp + '_ipv4.html');
-    $('#ipv6-sankey-iframe').attr('src', '/static/output/traffic_sankey_' + timestamp + '_ipv6.html');
+    $('#ipv4-sankey-iframe').attr('src', '/visualization/traffic_sankey_' + timestamp + '_ipv4.html');
+    $('#ipv6-sankey-iframe').attr('src', '/visualization/traffic_sankey_' + timestamp + '_ipv6.html');
     
     // 3D 시각화 URL 설정
-    $('#ipv4-viz3d-iframe').attr('src', '/static/output/traffic_3d_interactive_' + timestamp + '_ipv4.html');
-    $('#ipv6-viz3d-iframe').attr('src', '/static/output/traffic_3d_interactive_' + timestamp + '_ipv6.html');
+    $('#ipv4-viz3d-iframe').attr('src', '/visualization/traffic_3d_interactive_' + timestamp + '_ipv4.html');
+    $('#ipv6-viz3d-iframe').attr('src', '/visualization/traffic_3d_interactive_' + timestamp + '_ipv6.html');
     
     // 트래픽 데이터 로드
     $.getJSON('/api/analysis_data?timestamp=' + timestamp, function(data) {
