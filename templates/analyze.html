@@ -109,7 +109,7 @@
     <div id="loadingText">분석 중입니다. 잠시만 기다려주세요...</div>
 </div>
 
-<h2>로그 분석</h2>
+<h2><i class="bi bi-bar-chart me-1"></i> 로그 분석</h2>
 
 {% if timestamp %}
     <div class="alert alert-info">
@@ -129,9 +129,9 @@
             <div class="row">
                 <div class="col-md-6">
                     <div class="filter-section">
-                        <h6>기본 필터</h6>
+                        <h6><i class="bi bi-funnel me-1"></i>기본 필터</h6>
                         <div class="mb-3">
-                            <label for="date-range" class="form-label">날짜 범위</label>
+                            <label for="date-range" class="form-label"><i class="bi bi-calendar-range me-1"></i>날짜 범위</label>
                             <input type="text" class="form-control" id="date-range" name="date_range">
                             <input type="hidden" id="start_date" name="start_date">
                             <input type="hidden" id="end_date" name="end_date">
@@ -275,7 +275,7 @@
                             </div>
                         </div>
                         <div class="d-grid gap-2 mt-3">
-                            <button type="submit" class="btn btn-primary btn-lg" id="startAnalysisBtn">분석 시작</button>
+                            <button type="submit" class="btn btn-primary btn-lg" id="startAnalysisBtn"><i class="bi bi-play-circle me-1"></i>분석 시작</button>
                         </div>
                     </div>
                 </div>
@@ -288,13 +288,13 @@
 <div class="result-tabs">
     <ul class="nav nav-tabs" id="resultTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="traffic-tab" data-bs-toggle="tab" data-bs-target="#traffic" type="button" role="tab">상위 트래픽 패턴</button>
+            <button class="nav-link active" id="traffic-tab" data-bs-toggle="tab" data-bs-target="#traffic" type="button" role="tab"><i class="bi bi-bar-chart me-1"></i>상위 트래픽 패턴</button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="sankey-tab" data-bs-toggle="tab" data-bs-target="#sankey" type="button" role="tab">트래픽 흐름 다이어그램</button>
+            <button class="nav-link" id="sankey-tab" data-bs-toggle="tab" data-bs-target="#sankey" type="button" role="tab"><i class="bi bi-diagram-3 me-1"></i>트래픽 흐름 다이어그램</button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="viz3d-tab" data-bs-toggle="tab" data-bs-target="#viz3d" type="button" role="tab">3D 트래픽 시각화</button>
+            <button class="nav-link" id="viz3d-tab" data-bs-toggle="tab" data-bs-target="#viz3d" type="button" role="tab"><i class="bi bi-boxes me-1"></i>3D 트래픽 시각화</button>
         </li>
     </ul>
     <div class="tab-content" id="resultTabsContent">

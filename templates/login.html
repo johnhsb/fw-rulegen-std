@@ -17,15 +17,15 @@
                 {% endif %}
                 <form method="post" action="{{ url_for('login') }}">
                     <div class="mb-3">
-                        <label for="username" class="form-label">사용자 이름</label>
+                        <label for="username" class="form-label"><i class="bi bi-person me-1"></i> 사용자 이름</label>
                         <input type="text" class="form-control" id="username" name="username" required autofocus>
                     </div>
                     <div class="mb-3">
-                        <label for="password" class="form-label">비밀번호</label>
+                        <label for="password" class="form-label"><i class="bi bi-key me-1"></i> 비밀번호</label>
                         <input type="password" class="form-control" id="password" name="password" required>
                     </div>
                     <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-primary">로그인</button>
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-box-arrow-in-right me-1"></i>로그인</button>
                     </div>
                 </form>
             </div>

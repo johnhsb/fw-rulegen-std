@@ -124,7 +124,7 @@
 {% endblock %}
 
 {% block content %}
-<h2>대시보드</h2>
+<h2><i class="bi bi-speedometer2 me-1"></i> 대시보드</h2>
 <div class="row">
     <div class="col-12">
         <div class="card mb-4">
@@ -134,10 +134,10 @@
             <div class="card-body p-0">
                 <ul class="nav nav-tabs nav-justified" id="analysisTabs" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="manual-tab" data-bs-toggle="tab" data-bs-target="#manual" type="button" role="tab">수동 업로드</button>
+                        <button class="nav-link active" id="manual-tab" data-bs-toggle="tab" data-bs-target="#manual" type="button" role="tab"><i class="bi bi-cloud-upload me-1"></i>수동 업로드</button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="syslog-tab" data-bs-toggle="tab" data-bs-target="#syslog" type="button" role="tab">Syslog</button>
+                        <button class="nav-link" id="syslog-tab" data-bs-toggle="tab" data-bs-target="#syslog" type="button" role="tab"><i class="bi bi-hdd-network me-1"></i>Syslog</button>
                     </li>
                 </ul>
                 <div class="tab-content p-3" id="analysisTabsContent">
@@ -207,7 +207,7 @@
                                         </td>
                                         <td class="text-light">{{ analysis.policies_count }}</td>
                                         <td>
-                                            <a href="/analyze?timestamp={{ analysis.timestamp }}" class="btn btn-sm btn-primary">보기</a>
+                                            <a href="/analyze?timestamp={{ analysis.timestamp }}" class="btn btn-sm btn-primary"><i class="bi bi-search"></i> 보기</a>
                                         </td>
                                     </tr>
                                     {% endfor %}
@@ -319,14 +319,14 @@
             </div>
             <div class="card-body">
                 <div class="d-flex justify-content-between mb-3">
-                    <span>Syslog 서버:</span>
+                    <span><i class="bi bi-hdd-network me-1"></i>Syslog 서버:</span>
                     <span class="badge {% if is_syslog_running %}bg-success{% else %}bg-secondary{% endif %}">
-                        {% if is_syslog_running %}실행 중{% else %}중지됨{% endif %}
+                        {% if is_syslog_running %}<i class="bi bi-play-fill"></i>실행 중{% else %}중지됨{% endif %}
                     </span>
                 </div>
                 <div class="d-flex justify-content-around mt-4">
-                    <a href="/upload" class="btn btn-primary">로그 업로드</a>
-                    <a href="/syslog" class="btn btn-primary">Syslog 관리</a>
+                    <a href="/upload" class="btn btn-primary"><i class="bi bi-cloud-upload me-1"></i>로그 업로드</a>
+                    <a href="/syslog" class="btn btn-primary"><i class="bi bi-hdd-network me-1"></i>Syslog 관리</a>
                 </div>
             </div>
         </div>
