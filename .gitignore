@@ -10,8 +10,9 @@ Thumbs.db
 .idea/
 .vscode/
 
-# venv 관련
+# 실행환경 관련
 venv/
+system_settings.json
 
 # 사용자인증 관련
 ssl/
