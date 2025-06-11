@@ -438,6 +438,10 @@ class SyslogServer:
     
             # 정책 추천 생성
             policies = analyzer.generate_policy_recommendations()
+
+            # 주니퍼 설정 생성 추가
+            from modules.policy_generator import PolicyGenerator
+            config = PolicyGenerator(policies).generate_juniper_config()
     
             # 시각화 생성 - 파일 이름 형식 수정
             sankey_prefix = os.path.join(self.output_dir, f"traffic_sankey_{timestamp}")
@@ -460,6 +464,7 @@ class SyslogServer:
                 'timestamp': timestamp,
                 'params': params,
                 'policies': policies,
+                'config': config,
                 'top_traffic': top_traffic_df.to_dict('records') if top_traffic_df is not None else [],
                 'visualizations': {
                     'sankey': sankey_files,
