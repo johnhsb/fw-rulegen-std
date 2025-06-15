@@ -691,6 +691,128 @@ def api_cleanup():
         logger.error(f"데이터 정리 오류: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/api/analyze_syslog_file', methods=['POST'])
+@login_required
+def api_analyze_syslog_file():
+    """단일 Syslog 파일 분석 API 엔드포인트"""
+    filename = request.form.get('filename')
+    
+    if not filename:
+        return jsonify({'error': '파일명이 지정되지 않았습니다'}), 400
+    
+    # 파일 경로 구성
+    log_file_path = os.path.join(Config.LOGS_DIR, filename)
+    
+    # 파일 존재 확인
+    if not os.path.exists(log_file_path):
+        return jsonify({'error': '지정된 파일을 찾을 수 없습니다'}), 404
+    
+    # 분석 파라미터 가져오기
+    params = {
+        'min_occurrences': int(request.form.get('min_occurrences', 1)),
+        'eps': float(request.form.get('eps', 0.5)),
+        'min_samples': int(request.form.get('min_samples', 2)),
+        'max_data_points': int(request.form.get('max_data_points', 10000))
+    }
+
+    # 필터 파라미터 가져오기
+    filters = get_filter_params_from_request(request.form)
+
+    # top_n 파라미터 가져오기
+    top_n = int(request.form.get('top_n', 50))
+
+    try:
+        # 로그 파싱
+        parser = LogParser(log_files=[log_file_path])
+        log_df = parser.process_logs()
+
+        if log_df.empty:
+            return jsonify({'error': '유효한 로그 데이터를 찾을 수 없습니다'}), 400
+
+        # 필터링 적용
+        filtered_df = apply_filters(log_df, filters)
+
+        if filtered_df.empty:
+            return jsonify({'error': '필터링 후 남은 로그 데이터가 없습니다. 필터 조건을 완화해 주세요.'}), 400
+
+        # 트래픽 분석
+        analyzer = TrafficAnalyzer(filtered_df, **params)
+        analyzer.cluster_traffic_patterns()
+
+        # 분석 결과 (상위 트래픽 패턴, 클러스터링 등)
+        top_traffic_df = analyzer.analyze_top_traffic_patterns(top_n=top_n)
+        policies = analyzer.generate_policy_recommendations()
+        config = PolicyGenerator(policies).generate_juniper_config()
+
+        # 시각화 생성
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        visualizations = create_visualizations(analyzer, timestamp)
+
+        # 장비명 정보 수집 - 파일명에서 추출
+        device_names = list(filtered_df['device_name'].unique()) if 'device_name' in filtered_df.columns else []
+        
+        # 파일명에서 장비명 추출 (파일명 형식: 장비명_날짜_시간.log)
+        file_basename = os.path.basename(filename)
+        if '_' in file_basename:
+            extracted_device_name = file_basename.split('_')[0]
+            if extracted_device_name not in device_names:
+                device_names.insert(0, extracted_device_name)
+
+        # 필터 적용 여부 확인
+        filters_applied = any([
+            filters.get('device_name_filter') and filters.get('device_name_filter').strip(),
+            filters.get('source_ip_filter') and filters.get('source_ip_filter').strip(),
+            filters.get('destination_ip_filter') and filters.get('destination_ip_filter').strip(),
+            filters.get('port_filter') and filters.get('port_filter').strip(),
+            filters.get('protocol_filter') and filters.get('protocol_filter').strip(),
+            filters.get('source_zone_filter') and filters.get('source_zone_filter').strip(),
+            filters.get('destination_zone_filter') and filters.get('destination_zone_filter').strip(),
+            filters.get('exclude_noise')
+        ])
+
+        # 로그 파일명만 추출 (경로 제외)
+        log_filenames = [filename]
+
+        # 분석 결과 저장
+        save_analysis_results(timestamp, {
+            'params': params,
+            'filters': filters,
+            'policies': policies,
+            'config': config,
+            'top_traffic': top_traffic_df.to_dict('records') if top_traffic_df is not None else [],
+            'visualizations': visualizations,
+            'source': 'syslog',  # syslog 소스로 표시
+            'log_files': [log_file_path],  # 전체 경로
+            'log_filenames': log_filenames,  # 파일명만
+            'device_names': device_names,  # 장비명 목록
+            'filters_applied': filters_applied,  # 필터 적용 여부
+            'total_log_records': len(log_df),  # 전체 로그 수
+            'filtered_log_records': len(filtered_df),  # 필터링 후 로그 수
+            'analysis_type': 'single_file',  # 단일 파일 분석임을 표시
+            'source_filename': filename  # 원본 파일명 저장
+        })
+
+        # 전역 상태 업데이트
+        global_state['analyzer'] = analyzer
+        global_state['log_df'] = filtered_df
+        global_state['policies'] = policies
+        global_state['config'] = config
+
+        logger.info(f"단일 Syslog 파일 분석 완료: {filename} -> {len(policies)}개 정책 생성")
+
+        return jsonify({
+            'success': True,
+            'policies_count': len(policies),
+            'timestamp': timestamp,
+            'visualizations': visualizations,
+            'filename': filename,
+            'message': f'파일 "{filename}" 분석이 완료되었습니다.'
+        })
+
+    except Exception as e:
+        logger.error(f"단일 Syslog 파일 분석 오류: {e}", exc_info=True)
+        return jsonify({'error': f'분석 중 오류가 발생했습니다: {str(e)}'}), 500
+
 #----- 유틸리티 함수 -----#
 
 def get_filter_params_from_request(form_data):
@@ -1054,7 +1176,9 @@ def get_analyses_list(source_type):
                         'device_names': data.get('device_names', []),
                         'filters_applied': data.get('filters_applied', False),
                         'total_records': data.get('total_log_records', 0),
-                        'filtered_records': data.get('filtered_log_records', 0)
+                        'filtered_records': data.get('filtered_log_records', 0),
+                        'analysis_type': data.get('analysis_type', 'auto'),
+                        'source_filename': data.get('source_filename', '')
                     })
             except Exception as e:
                 logger.error(f"분석 결과 로드 오류: {e}")

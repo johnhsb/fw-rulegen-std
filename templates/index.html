@@ -230,6 +230,7 @@
                                 <thead>
                                     <tr>
                                         <th scope="col">분석 일시</th>
+                                        <th scope="col">타입</th>
                                         <th scope="col">로그 파일</th>
                                         <th scope="col">장비명</th>
                                         <th scope="col">필터</th>
@@ -245,6 +246,13 @@
                                             {{ analysis.date[:4] }}-{{ analysis.date[4:6] }}-{{ analysis.date[6:] }}
                                             <br>
                                             <small>{{ analysis.time[:2] }}:{{ analysis.time[2:4] }}:{{ analysis.time[4:] }}</small>
+                                        </td>
+                                        <td class="text-light">
+                                            {% if analysis.analysis_type == 'single_file' %}
+                                                <span class="badge bg-info">단일파일</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">자동</span>
+                                            {% endif %}
                                         </td>
                                         <td class="text-light">
                                             {% if analysis.log_filenames %}

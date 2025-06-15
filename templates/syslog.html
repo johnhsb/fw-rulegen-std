@@ -109,8 +109,12 @@
     
     /* 로그 파일 리스트 아이템 스타일 개선 */
     .log-files-container .list-group-item {
-        padding: 8px 10px;
+        padding: 12px 15px;
         margin-bottom: 5px;
+        border-radius: 0.375rem;
+        transition: all 0.3s ease;
+        border: 1px solid #333;
+        position: relative;
     }
     
     /* 카드 바디 패딩 조정 */
@@ -118,6 +122,107 @@
         padding: 10px;
     }
 
+    /* 로그 파일 아이템 호버 효과 개선 */
+    .log-file-item {
+        transition: all 0.3s ease;
+        border-radius: 0.375rem !important;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .log-file-item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 4px;
+        background: linear-gradient(45deg, #0d6efd, #198754);
+        transform: scaleY(0);
+        transition: transform 0.3s ease;
+    }
+    
+    .log-file-item:hover {
+        background-color: #2d2d2d !important;
+        border-color: #0d6efd !important;
+        transform: translateX(8px);
+        box-shadow: 0 4px 12px rgba(13, 110, 253, 0.2);
+    }
+    
+    .log-file-item:hover::before {
+        transform: scaleY(1);
+    }
+    
+    .log-file-item:hover .file-name {
+        color: #58a6ff !important;
+        font-weight: 500;
+    }
+    
+    .log-file-item:hover .bi-file-earmark-text {
+        color: #0dcaf0 !important;
+        transform: scale(1.1);
+    }
+    
+    .log-file-item:hover .bi-arrow-right-circle {
+        color: #20c997 !important;
+        transform: scale(1.2) rotate(90deg);
+    }
+    
+    /* 아이콘 애니메이션 */
+    .log-file-item .bi-file-earmark-text {
+        transition: all 0.3s ease;
+    }
+    
+    .log-file-item .bi-arrow-right-circle {
+        transition: all 0.3s ease;
+        opacity: 0.7;
+    }
+    
+    /* 파일명 스타일 */
+    .file-name {
+        transition: all 0.3s ease;
+        font-family: 'Consolas', 'Monaco', 'Lucida Console', monospace;
+        font-size: 0.9rem;
+    }
+    
+    /* 배지 스타일 */
+    .log-file-item .badge {
+        transition: all 0.3s ease;
+    }
+    
+    .log-file-item:hover .badge {
+        background-color: #0d6efd !important;
+        transform: scale(1.05);
+    }
+    
+    /* 로딩 오버레이 스타일 */
+    #loadingOverlay {
+        backdrop-filter: blur(3px);
+    }
+    
+    /* 툴팁 스타일 개선 */
+    .log-file-item[title]:hover::after {
+        content: attr(title);
+        position: absolute;
+        bottom: -35px;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #333;
+        color: #fff;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        white-space: nowrap;
+        z-index: 1000;
+        opacity: 0;
+        animation: tooltipFadeIn 0.3s ease forwards;
+    }
+    
+    @keyframes tooltipFadeIn {
+        to {
+            opacity: 1;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -350,13 +455,28 @@ function loadLogFiles() {
             if (response.files && response.files.length > 0) {
                 var html = '<ul class="list-group">';
                 response.files.forEach(function(file) {
-                    html += '<li class="list-group-item d-flex justify-content-between align-items-center">' +
-                        '<div class="text-truncate" title="' + file.filename + '">' + file.filename + '</div>' +
-                        '<span class="badge bg-primary rounded-pill ms-2">' + formatFileSize(file.size) + '</span>' +
+                    html += '<li class="list-group-item d-flex justify-content-between align-items-center log-file-item" ' +
+                        'data-filename="' + file.filename + '" style="cursor: pointer;" ' +
+                        'title="클릭하여 이 파일을 분석합니다">' +
+                        '<div class="text-truncate d-flex align-items-center">' + 
+                        '<i class="bi bi-file-earmark-text me-2 text-info"></i>' +
+                        '<span class="file-name">' + file.filename + '</span>' +
+                        '</div>' +
+                        '<div class="d-flex align-items-center">' +
+                        '<span class="badge bg-primary rounded-pill me-2">' + formatFileSize(file.size) + '</span>' +
+                        '<i class="bi bi-arrow-right-circle text-success" title="분석하기"></i>' +
+                        '</div>' +
                         '</li>';
                 });
                 html += '</ul>';
                 $('#logFilesList').html(html);
+                
+                // 파일 전체 클릭 이벤트 추가
+                $('.log-file-item').on('click', function() {
+                    var filename = $(this).data('filename');
+                    analyzeLogFile(filename);
+                });
+                
             } else {
                 $('#logFilesList').html('<div class="alert alert-info">수집된 로그 파일이 없습니다.</div>');
             }
@@ -365,6 +485,75 @@ function loadLogFiles() {
             $('#logFilesList').html('<div class="alert alert-danger">로그 파일 목록을 가져오는 중 오류가 발생했습니다.</div>');
         }
     });
+}
+
+function analyzeLogFile(filename) {
+    if (!filename) {
+        alert('파일명이 지정되지 않았습니다.');
+        return;
+    }
+    
+    // 확인 대화상자
+    if (!confirm('선택한 로그 파일 "' + filename + '"을 분석하시겠습니까?\n분석에는 시간이 소요될 수 있습니다.')) {
+        return;
+    }
+    
+    // 로딩 표시
+    showLoadingOverlay();
+    
+    // 분석 요청
+    $.ajax({
+        url: '/api/analyze_syslog_file',
+        type: 'POST',
+        data: {
+            filename: filename,
+            // 기본 분석 파라미터
+            min_occurrences: 1,
+            eps: 0.5,
+            min_samples: 2,
+            max_data_points: 10000,
+            top_n: 50
+        },
+        success: function(response) {
+            hideLoadingOverlay();
+            if (response.success) {
+                // 분석 완료 후 결과 페이지로 이동
+                window.location.href = '/analyze?timestamp=' + response.timestamp;
+            } else {
+                alert('분석에 실패했습니다: ' + (response.error || '알 수 없는 오류'));
+            }
+        },
+        error: function(xhr) {
+            hideLoadingOverlay();
+            var errorMsg = '분석 중 오류가 발생했습니다.';
+            if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMsg = xhr.responseJSON.error;
+            }
+            alert(errorMsg);
+        }
+    });
+}
+
+function showLoadingOverlay() {
+    // 로딩 오버레이가 없으면 생성
+    if ($('#loadingOverlay').length === 0) {
+        $('body').append(`
+            <div id="loadingOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+                 background-color: rgba(0, 0, 0, 0.8); z-index: 9999; display: flex; 
+                 justify-content: center; align-items: center; flex-direction: column;">
+                <div class="spinner-border text-light" style="width: 80px; height: 80px;" role="status">
+                    <span class="visually-hidden">로딩 중...</span>
+                </div>
+                <div style="color: white; margin-top: 15px; font-size: 18px;">분석 중입니다. 잠시만 기다려주세요...</div>
+            </div>
+        `);
+    } else {
+        $('#loadingOverlay').show();
+    }
+}
+
+function hideLoadingOverlay() {
+    $('#loadingOverlay').hide();
 }
 
 function updateLogConsole() {
