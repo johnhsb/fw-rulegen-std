@@ -204,31 +204,44 @@ def api_analyze_logs():
 
     # 필터 파라미터 가져오기
     filters = get_filter_params_from_request(request.form)
-
-    # top_n 파라미터 가져오기 (추가)
     top_n = int(request.form.get('top_n', 50))
-
+    
     # 타임스탬프 확인 - 기존 분석 결과 재분석 여부 확인
     previous_timestamp = request.form.get('timestamp')
     
+    # 분석 타입 결정 로직
+    analysis_type = 'manual'  # 기본값: 수동 분석
+    source_type = 'upload'    # 기본값: 업로드
+    original_analysis_type = None
+    source_filename = None
+    
     # 로그 파일 목록 초기화
     log_files = []
-    source_type = 'upload'  # 기본값
     
     if previous_timestamp:
         logger.info(f"기존 분석 결과({previous_timestamp})에 새 필터 적용 시도")
-        # 기존 분석 결과에서 로그 파일 경로 가져오기
+        # 기존 분석 결과에서 메타데이터 가져오기
         analysis_result = load_analysis_result(previous_timestamp)
         
-        if analysis_result and 'log_files' in analysis_result:
-            log_files = analysis_result.get('log_files', [])
+        if analysis_result:
+            # 원본 분석 타입 정보 가져오기
+            original_analysis_type = analysis_result.get('analysis_type', 'auto')
             source_type = analysis_result.get('source', 'upload')
+            source_filename = analysis_result.get('source_filename', '')
+            log_files = analysis_result.get('log_files', [])
+            
+            # 재분석 타입 결정
+            if original_analysis_type == 'single_file':
+                analysis_type = 'single_file_reanalysis'  # 단일파일 재분석
+            elif original_analysis_type == 'auto':
+                analysis_type = 'auto_reanalysis'  # 자동분석 재분석
+            else:
+                analysis_type = 'manual_reanalysis'  # 수동분석 재분석
             
             # 모든 로그 파일이 존재하는지 확인
             all_files_exist = all(os.path.exists(file_path) for file_path in log_files)
             
             if not all_files_exist:
-                # 일부 파일이 없는 경우
                 missing_files = [file_path for file_path in log_files if not os.path.exists(file_path)]
                 logger.warning(f"일부 원본 로그 파일을 찾을 수 없습니다: {missing_files}")
                 
@@ -237,7 +250,7 @@ def api_analyze_logs():
                 else:  # syslog
                     return jsonify({'error': '원본 Syslog 파일을 찾을 수 없습니다. 새로운 로그가 수집되기를 기다리거나 다른 분석 결과를 선택하세요.'}), 400
             
-            logger.info(f"기존 분석 결과에서 {len(log_files)}개의 로그 파일 경로 로드")
+            logger.info(f"기존 분석 결과에서 {len(log_files)}개의 로그 파일 경로 로드 (원본 타입: {original_analysis_type})")
     
     # 타임스탬프가 없거나 해당 타임스탬프의 로그 파일이 없는 경우
     if not log_files:
@@ -248,11 +261,13 @@ def api_analyze_logs():
             return jsonify({'error': '로그 파일을 먼저 업로드해 주세요'}), 400
             
         log_files = uploaded_files
+        analysis_type = 'manual'  # 새로운 수동 분석
+        source_type = 'upload'
         logger.info(f"세션에서 {len(log_files)}개의 업로드된 로그 파일 경로 로드")
 
     try:
         # 로그 파싱
-        parser = LogParser(log_files=log_files)  # 수정된 부분: log_dir 대신 log_files 직접 전달
+        parser = LogParser(log_files=log_files)
         log_df = parser.process_logs()
 
         if log_df.empty:
@@ -268,12 +283,12 @@ def api_analyze_logs():
         analyzer = TrafficAnalyzer(filtered_df, **params)
         analyzer.cluster_traffic_patterns()
 
-        # 분석 결과 (상위 트래픽 패턴, 클러스터링 등)
+        # 분석 결과 생성
         top_traffic_df = analyzer.analyze_top_traffic_patterns(top_n=top_n)
         policies = analyzer.generate_policy_recommendations()
         config = PolicyGenerator(policies).generate_juniper_config()
 
-        # 시각화 생성 (Sankey, 3D 등)
+        # 시각화 생성
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         visualizations = create_visualizations(analyzer, timestamp)
 
@@ -295,7 +310,7 @@ def api_analyze_logs():
         # 로그 파일명만 추출 (경로 제외)
         log_filenames = [os.path.basename(f) for f in log_files]
 
-        # 분석 결과 저장
+        # 분석 결과 저장 - analysis_type 포함
         save_analysis_results(timestamp, {
             'params': params,
             'filters': filters,
@@ -303,13 +318,18 @@ def api_analyze_logs():
             'config': config,
             'top_traffic': top_traffic_df.to_dict('records') if top_traffic_df is not None else [],
             'visualizations': visualizations,
-            'source': source_type,  # 기존 분석의 소스 타입 유지
-            'log_files': log_files,  # 전체 경로
-            'log_filenames': log_filenames,  # 파일명만
-            'device_names': device_names,  # 장비명 목록
-            'filters_applied': filters_applied,  # 필터 적용 여부
-            'total_log_records': len(log_df),  # 전체 로그 수
-            'filtered_log_records': len(filtered_df)  # 필터링 후 로그 수
+            'source': source_type,
+            'log_files': log_files,
+            'log_filenames': log_filenames,
+            'device_names': device_names,
+            'filters_applied': filters_applied,
+            'total_log_records': len(log_df),
+            'filtered_log_records': len(filtered_df),
+            'analysis_type': analysis_type,  # 올바른 분석 타입 설정
+            'original_analysis_type': original_analysis_type,  # 원본 분석 타입 보존
+            'source_filename': source_filename,  # 원본 파일명 보존 (단일파일인 경우)
+            'is_reanalysis': previous_timestamp is not None,  # 재분석 여부
+            'previous_timestamp': previous_timestamp  # 원본 분석 타임스탬프
         })
 
         # 전역 상태 업데이트
@@ -322,7 +342,8 @@ def api_analyze_logs():
             'success': True,
             'policies_count': len(policies),
             'timestamp': timestamp,
-            'visualizations': visualizations
+            'visualizations': visualizations,
+            'analysis_type': analysis_type
         })
 
     except Exception as e:

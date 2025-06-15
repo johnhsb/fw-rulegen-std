@@ -249,9 +249,33 @@
                                         </td>
                                         <td class="text-light">
                                             {% if analysis.analysis_type == 'single_file' %}
-                                                <span class="badge bg-info">단일파일</span>
+                                                <span class="badge bg-info">
+                                                    <i class="bi bi-file-text me-1"></i>단일파일
+                                                </span>
+                                            {% elif analysis.analysis_type == 'single_file_reanalysis' %}
+                                                <span class="badge bg-info">
+                                                    <i class="bi bi-arrow-repeat me-1"></i>단일파일(재분석)
+                                                </span>
+                                            {% elif analysis.analysis_type == 'auto' %}
+                                                <span class="badge bg-secondary">
+                                                    <i class="bi bi-clock me-1"></i>자동
+                                                </span>
+                                            {% elif analysis.analysis_type == 'auto_reanalysis' %}
+                                                <span class="badge bg-secondary">
+                                                    <i class="bi bi-arrow-repeat me-1"></i>자동(재분석)
+                                                </span>
+                                            {% elif analysis.analysis_type == 'manual_reanalysis' %}
+                                                <span class="badge bg-primary">
+                                                    <i class="bi bi-arrow-repeat me-1"></i>수동(재분석)
+                                                </span>
                                             {% else %}
-                                                <span class="badge bg-secondary">자동</span>
+                                                <span class="badge bg-primary">
+                                                    <i class="bi bi-cloud-upload me-1"></i>수동
+                                                </span>
+                                            {% endif %}
+
+                                            {% if analysis.source_filename %}
+                                            <br><small class="text-muted">{{ analysis.source_filename }}</small>
                                             {% endif %}
                                         </td>
                                         <td class="text-light">
