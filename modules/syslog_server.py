@@ -384,8 +384,8 @@ class SyslogServer:
     
     def analyze_single_log_file(self, log_file):
         """
-        단일 로그 파일 분석
-    
+        개별 로그 파일 분석 (자동 분석)
+        
         Args:
             log_file (str): 분석할 로그 파일 경로
         """
@@ -400,7 +400,7 @@ class SyslogServer:
                 logger.warning(f"파싱된 로그 데이터가 없습니다: {log_file}")
                 return
     
-            # 파일명에서 장비정보 추출 - 수정된 방식
+            # 파일명에서 타임스탬프 추출 - 수정된 방식
             file_basename = os.path.basename(log_file)  # 예: "P_FW_1_20250517_123045.log"
             
             # .log 확장자 제거
@@ -410,16 +410,14 @@ class SyslogServer:
             parts = file_name_without_ext.rsplit('_', 2)  # ['P_FW_1', '20250517', '123045']
             
             if len(parts) == 3:  # [장비명, 날짜, 시간] 형태로 분리됨
-                device_name = parts[0]  # 장비명
                 date_part = parts[1]    # YYYYMMDD
                 time_part = parts[2]    # HHMMSS
                 
                 # 타임스탬프 생성
                 timestamp = f"{date_part}_{time_part}"  # YYYYMMDD_HHMMSS 형식
             else:
-                # 형식이 예상과 다른 경우 기본값 사용
-                device_name = file_name_without_ext  # 전체 이름 사용
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  # 현재 시간 사용
+                # 형식이 예상과 다른 경우 현재 시간 사용
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
             # 클러스터링 파라미터 설정
             params = {
@@ -438,12 +436,12 @@ class SyslogServer:
     
             # 정책 추천 생성
             policies = analyzer.generate_policy_recommendations()
-
-            # 주니퍼 설정 생성 추가
+    
+            # 주니퍼 설정 생성
             from modules.policy_generator import PolicyGenerator
             config = PolicyGenerator(policies).generate_juniper_config()
     
-            # 시각화 생성 - 파일 이름 형식 수정
+            # 시각화 생성
             sankey_prefix = os.path.join(self.output_dir, f"traffic_sankey_{timestamp}")
             viz3d_prefix = os.path.join(self.output_dir, f"traffic_3d_interactive_{timestamp}")
     
@@ -453,8 +451,19 @@ class SyslogServer:
             # 3D 인터랙티브 시각화
             viz_files = analyzer.visualize_traffic_patterns_3d_interactive(viz3d_prefix)
     
-            # 장비명 정보 수집
-            device_names = list(log_df['device_name'].unique()) if 'device_name' in log_df.columns else [device_name]
+            # 장비명 정보 수집 - 로그 내용에서만 추출
+            device_names = []
+            if 'device_name' in log_df.columns:
+                log_device_names = list(log_df['device_name'].unique())
+                # 'unknown'이 아닌 유효한 장비명만 필터링
+                device_names = [name for name in log_device_names if name and name.strip() != 'unknown']
+            
+            # 장비명이 없는 경우 기본값 설정
+            if not device_names:
+                device_names = ['Unknown_Device']
+                logger.warning(f"로그에서 유효한 장비명을 찾을 수 없습니다. 파일: {log_file}")
+    
+            logger.info(f"자동 분석 - 로그에서 추출된 장비명: {device_names}")
     
             # 로그 파일명만 추출 (경로 제외)
             log_filenames = [os.path.basename(log_file)]
@@ -473,10 +482,11 @@ class SyslogServer:
                 'source': 'syslog',
                 'log_files': [log_file],
                 'log_filenames': log_filenames,
-                'device_names': device_names,
+                'device_names': device_names,  # 로그에서만 추출된 장비명
                 'filters_applied': False,
                 'total_log_records': len(log_df),
                 'filtered_log_records': len(log_df),
+                'analysis_type': 'auto',  # 자동 분석임을 표시
                 'syslog_filters': {
                     'device_filter': self.device_filter,
                     'device_filter_type': self.device_filter_type,
@@ -485,11 +495,17 @@ class SyslogServer:
                 }
             }
     
-            # 결과 파일 저장 - 장비명을 파일명에 포함
+            # 결과 파일 저장 - 장비명 사용
+            if device_names and device_names[0] != 'Unknown_Device':
+                device_name = device_names[0]
+            else:
+                device_name = "Unknown"
+                
             result_file = os.path.join(self.output_dir, f"analysis_{device_name}_{timestamp}.json")
+            
             # 데이터 정리 과정 추가 (NumPy 객체 처리)
             sanitized_result = self.sanitize_for_json(result)
-
+    
             with open(result_file, 'w') as f:
                 json.dump(sanitized_result, f, indent=2)
     

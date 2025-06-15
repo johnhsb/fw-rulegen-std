@@ -232,7 +232,7 @@ def api_analyze_logs():
             
             # 재분석 타입 결정
             if original_analysis_type == 'single_file':
-                analysis_type = 'single_file_reanalysis'  # 단일파일 재분석
+                analysis_type = 'single_file_reanalysis'  # 개별파일 재분석
             elif original_analysis_type == 'auto':
                 analysis_type = 'auto_reanalysis'  # 자동분석 재분석
             else:
@@ -292,8 +292,19 @@ def api_analyze_logs():
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         visualizations = create_visualizations(analyzer, timestamp)
 
-        # 장비명 정보 수집
-        device_names = list(filtered_df['device_name'].unique()) if 'device_name' in filtered_df.columns else []
+        # 장비명 정보 수집 - 로그 내용에서만 추출
+        device_names = []
+        if 'device_name' in filtered_df.columns:
+            log_device_names = list(filtered_df['device_name'].unique())
+            # 'unknown'이 아닌 유효한 장비명만 필터링
+            device_names = [name for name in log_device_names if name and name.strip() != 'unknown']
+
+        # 장비명이 없는 경우 기본값 설정
+        if not device_names:
+            device_names = ['Unknown_Device']
+            logger.warning(f"로그에서 유효한 장비명을 찾을 수 없습니다. 분석 타입: {analysis_type}")
+
+        logger.info(f"일반 분석 - 로그에서 추출된 장비명: {device_names}")
         
         # 필터 적용 여부 확인
         filters_applied = any([
@@ -327,7 +338,7 @@ def api_analyze_logs():
             'filtered_log_records': len(filtered_df),
             'analysis_type': analysis_type,  # 올바른 분석 타입 설정
             'original_analysis_type': original_analysis_type,  # 원본 분석 타입 보존
-            'source_filename': source_filename,  # 원본 파일명 보존 (단일파일인 경우)
+            'source_filename': source_filename,  # 원본 파일명 보존 (개별파일 분석의 경우)
             'is_reanalysis': previous_timestamp is not None,  # 재분석 여부
             'previous_timestamp': previous_timestamp  # 원본 분석 타임스탬프
         })
@@ -715,7 +726,7 @@ def api_cleanup():
 @app.route('/api/analyze_syslog_file', methods=['POST'])
 @login_required
 def api_analyze_syslog_file():
-    """단일 Syslog 파일 분석 API 엔드포인트"""
+    """개별 Syslog 파일 분석 API 엔드포인트"""
     filename = request.form.get('filename')
     
     if not filename:
@@ -769,15 +780,19 @@ def api_analyze_syslog_file():
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         visualizations = create_visualizations(analyzer, timestamp)
 
-        # 장비명 정보 수집 - 파일명에서 추출
-        device_names = list(filtered_df['device_name'].unique()) if 'device_name' in filtered_df.columns else []
+        # 장비명 정보 수집 - 로그 내용에서만 추출
+        device_names = []
+        if 'device_name' in filtered_df.columns:
+            log_device_names = list(filtered_df['device_name'].unique())
+            # 'unknown'이 아닌 유효한 장비명만 필터링
+            device_names = [name for name in log_device_names if name and name.strip() != 'unknown']
         
-        # 파일명에서 장비명 추출 (파일명 형식: 장비명_날짜_시간.log)
-        file_basename = os.path.basename(filename)
-        if '_' in file_basename:
-            extracted_device_name = file_basename.split('_')[0]
-            if extracted_device_name not in device_names:
-                device_names.insert(0, extracted_device_name)
+        # 장비명이 없는 경우 기본값 설정
+        if not device_names:
+            device_names = ['Unknown_Device']
+            logger.warning(f"로그에서 유효한 장비명을 찾을 수 없습니다. 파일: {filename}")
+        
+        logger.info(f"단일 파일 분석 - 로그에서 추출된 장비명: {device_names}")
 
         # 필터 적용 여부 확인
         filters_applied = any([
@@ -802,15 +817,15 @@ def api_analyze_syslog_file():
             'config': config,
             'top_traffic': top_traffic_df.to_dict('records') if top_traffic_df is not None else [],
             'visualizations': visualizations,
-            'source': 'syslog',  # syslog 소스로 표시
-            'log_files': [log_file_path],  # 전체 경로
-            'log_filenames': log_filenames,  # 파일명만
-            'device_names': device_names,  # 장비명 목록
-            'filters_applied': filters_applied,  # 필터 적용 여부
-            'total_log_records': len(log_df),  # 전체 로그 수
-            'filtered_log_records': len(filtered_df),  # 필터링 후 로그 수
-            'analysis_type': 'single_file',  # 단일 파일 분석임을 표시
-            'source_filename': filename  # 원본 파일명 저장
+            'source': 'syslog',
+            'log_files': [log_file_path],
+            'log_filenames': log_filenames,
+            'device_names': device_names,  # 로그에서만 추출된 장비명
+            'filters_applied': filters_applied,
+            'total_log_records': len(log_df),
+            'filtered_log_records': len(filtered_df),
+            'analysis_type': 'single_file',
+            'source_filename': filename
         })
 
         # 전역 상태 업데이트
@@ -827,6 +842,7 @@ def api_analyze_syslog_file():
             'timestamp': timestamp,
             'visualizations': visualizations,
             'filename': filename,
+            'device_names': device_names,
             'message': f'파일 "{filename}" 분석이 완료되었습니다.'
         })
 
