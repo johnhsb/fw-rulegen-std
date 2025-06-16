@@ -561,7 +561,7 @@ class TrafficAnalyzer:
         return df
     
     def analyze_top_traffic_patterns(self, top_n=50):
-        """동적 서브넷을 사용한 상위 트래픽 패턴 분석"""
+        """동적 서브넷을 사용한 상위 트래픽 패턴 분석 (GeoIP 정보 포함)"""
         if self.clustered_df is None:
             self.cluster_traffic_patterns()
         
@@ -569,7 +569,18 @@ class TrafficAnalyzer:
             logger.error("분석할 데이터가 없습니다!")
             return None
         
-        logger.info(f"상위 {top_n} 트래픽 패턴 분석 중 (동적 서브넷 사용)...")
+        logger.info(f"상위 {top_n} 트래픽 패턴 분석 중 (동적 서브넷 + GeoIP 정보 사용)...")
+        
+        def truncate_asn_org(org_name, max_words=2):
+            """ASN 기관명을 지정된 단어 수만큼 잘라내기"""
+            if not org_name or org_name == 'Unknown':
+                return org_name
+            
+            words = org_name.split()
+            if len(words) <= max_words:
+                return org_name
+            
+            return ' '.join(words[:max_words])
         
         result_dfs = []
         
@@ -617,7 +628,62 @@ class TrafficAnalyzer:
                 axis=1
             )
             
-            result_df = top_traffic[['src_subnet', 'subnet_info', 'destination_ip', 
+            # GeoIP 정보 추가
+            logger.info("GeoIP 정보 조회 중...")
+            
+            # 소스 서브넷의 대표 IP로 첫 번째 소스 IP 사용
+            top_traffic['src_representative_ip'] = top_traffic['source_ip'].apply(
+                lambda ip_list: ip_list[0] if ip_list else ''
+            )
+            
+            # 소스 IP GeoIP 정보
+            top_traffic['src_country'] = top_traffic['src_representative_ip'].apply(
+                lambda ip: self.geoip_analyzer.get_country_info(ip)['country_code'] if ip else 'Unknown'
+            )
+            
+            top_traffic['src_asn_info'] = top_traffic['src_representative_ip'].apply(
+                lambda ip: self.geoip_analyzer.get_asn_info(ip) if ip else {'asn': 0, 'org': 'Unknown'}
+            )
+            
+            top_traffic['src_asn_short'] = top_traffic['src_asn_info'].apply(
+                lambda info: f"AS{info['asn']}" if info['asn'] > 0 else 'Unknown'
+            )
+            
+            top_traffic['src_org_short'] = top_traffic['src_asn_info'].apply(
+                lambda info: truncate_asn_org(info['org'], 2)
+            )
+            
+            # 목적지 IP GeoIP 정보
+            top_traffic['dst_country'] = top_traffic['destination_ip'].apply(
+                lambda ip: self.geoip_analyzer.get_country_info(ip)['country_code']
+            )
+            
+            top_traffic['dst_asn_info'] = top_traffic['destination_ip'].apply(
+                lambda ip: self.geoip_analyzer.get_asn_info(ip)
+            )
+            
+            top_traffic['dst_asn_short'] = top_traffic['dst_asn_info'].apply(
+                lambda info: f"AS{info['asn']}" if info['asn'] > 0 else 'Unknown'
+            )
+            
+            top_traffic['dst_org_short'] = top_traffic['dst_asn_info'].apply(
+                lambda info: truncate_asn_org(info['org'], 2)
+            )
+            
+            # GeoIP 표시용 컬럼 생성
+            top_traffic['src_geo_info'] = top_traffic.apply(
+                lambda row: f"{row['src_country']} / {row['src_asn_short']} / {row['src_org_short']}", 
+                axis=1
+            )
+            
+            top_traffic['dst_geo_info'] = top_traffic.apply(
+                lambda row: f"{row['dst_country']} / {row['dst_asn_short']} / {row['dst_org_short']}", 
+                axis=1
+            )
+            
+            # 최종 결과 DataFrame 구성
+            result_df = top_traffic[['src_subnet', 'subnet_info', 'src_geo_info', 
+                                    'destination_ip', 'dst_geo_info',
                                     'protocol', 'destination_port', 'port_info', 
                                     'occurrence', 'percentage', 'src_ip_count']].copy()
             
@@ -627,8 +693,9 @@ class TrafficAnalyzer:
         if not result_dfs:
             return pd.DataFrame()
         
+        logger.info("GeoIP 정보가 포함된 트래픽 패턴 분석 완료")
         return pd.concat(result_dfs)
-    
+
     def optimize_ip_ranges(self, ip_list):
         """IP 주소 목록을 최적화된 CIDR 블록으로 변환 (IPv4/IPv6 지원)"""
         if not ip_list:

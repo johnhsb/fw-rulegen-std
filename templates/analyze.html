@@ -110,6 +110,111 @@
         border-radius: 10px;
         margin-left: 5px;
     }
+
+    /* GeoIP 정보 표시 스타일 */
+    .geo-info {
+        font-size: 0.85rem;
+        color: #adb5bd;
+        line-height: 1.2;
+        word-break: break-word;
+    }
+    
+    .geo-info .country-code {
+        color: #58a6ff;
+        font-weight: 500;
+    }
+    
+    .geo-info .asn-info {
+        color: #79c0ff;
+    }
+    
+    .geo-info .org-info {
+        color: #b392f0;
+    }
+    
+    /* 테이블 컬럼 너비 조정 */
+    .table th:nth-child(1), .table td:nth-child(1) { /* 출발지 서브넷 */
+        width: 20%;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(2), .table td:nth-child(2) { /* 출발지 지역정보 */
+        width: 15%;
+        min-width: 100px;
+        font-size: 0.8rem;
+    }
+    
+    .table th:nth-child(3), .table td:nth-child(3) { /* 목적지 IP */
+        width: 15%;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(4), .table td:nth-child(4) { /* 목적지 지역정보 */
+        width: 15%;
+        min-width: 100px;
+        font-size: 0.8rem;
+    }
+    
+    .table th:nth-child(5), .table td:nth-child(5) { /* 포트 정보 */
+        width: 12%;
+        min-width: 80px;
+    }
+    
+    .table th:nth-child(6), .table td:nth-child(6) { /* 발생 횟수 */
+        width: 10%;
+        min-width: 70px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(7), .table td:nth-child(7) { /* 비율 */
+        width: 8%;
+        min-width: 60px;
+        text-align: center;
+    }
+    
+    /* 반응형 테이블 조정 */
+    @media (max-width: 1200px) {
+        .table th:nth-child(2), .table td:nth-child(2),
+        .table th:nth-child(4), .table td:nth-child(4) {
+            font-size: 0.7rem;
+            padding: 0.5rem 0.25rem;
+        }
+    }
+    
+    @media (max-width: 768px) {
+        .table th:nth-child(2), .table td:nth-child(2),
+        .table th:nth-child(4), .table td:nth-child(4) {
+            display: none; /* 모바일에서는 지역정보 숨김 */
+        }
+        
+        .table th:nth-child(1), .table td:nth-child(1),
+        .table th:nth-child(3), .table td:nth-child(3) {
+            width: 25%;
+        }
+        
+        .table th:nth-child(5), .table td:nth-child(5) {
+            width: 20%;
+        }
+        
+        .table th:nth-child(6), .table td:nth-child(6),
+        .table th:nth-child(7), .table td:nth-child(7) {
+            width: 15%;
+        }
+    }
+    
+    /* 툴팁 스타일 개선 */
+    [title] {
+        cursor: help;
+        border-bottom: 1px dotted #6c757d;
+    }
+    
+    /* 지역정보 텍스트 줄바꿈 방지 */
+    .geo-text {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 120px;
+    }
 </style>
 {% endblock %}
 
@@ -337,7 +442,9 @@
                                     <thead>
                                         <tr>
                                             <th>출발지 서브넷</th>
+                                            <th>출발지 지역정보</th>
                                             <th>목적지 IP</th>
+                                            <th>목적지 지역정보</th>
                                             <th>포트 정보</th>
                                             <th>발생 횟수</th>
                                             <th>비율</th>
@@ -358,7 +465,9 @@
                                     <thead>
                                         <tr>
                                             <th>출발지 서브넷</th>
+                                            <th>출발지 지역정보</th>
                                             <th>목적지 IP</th>
+                                            <th>목적지 지역정보</th>
                                             <th>포트 정보</th>
                                             <th>발생 횟수</th>
                                             <th>비율</th>
@@ -728,27 +837,33 @@ function loadVisualizationData(timestamp) {
             var ipv4Html = '';
             ipv4Traffic.forEach(function(item) {
                 ipv4Html += '<tr>' +
-                    '<td>' + item.src_subnet + '</td>' +
+                    '<td><span class="text-info" title="서브넷 효율성: ' + 
+                        (item.subnet_efficiency || 'N/A') + '">' + item.src_subnet + '</span></td>' +
+                    '<td><small class="text-muted">' + (item.src_geo_info || 'Unknown / Unknown / Unknown') + '</small></td>' +
                     '<td>' + item.destination_ip + '</td>' +
+                    '<td><small class="text-muted">' + (item.dst_geo_info || 'Unknown / Unknown / Unknown') + '</small></td>' +
                     '<td>' + item.port_info + '</td>' +
-                    '<td>' + item.occurrence + '</td>' +
-                    '<td>' + item.percentage + '%</td>' +
+                    '<td><span class="badge bg-primary">' + item.occurrence + '</span></td>' +
+                    '<td><span class="text-success">' + item.percentage + '%</span></td>' +
                     '</tr>';
             });
-            $('#ipv4-traffic-body').html(ipv4Html || '<tr><td colspan="5" class="text-center">IPv4 트래픽 데이터가 없습니다.</td></tr>');
+            $('#ipv4-traffic-body').html(ipv4Html || '<tr><td colspan="7" class="text-center">IPv4 트래픽 데이터가 없습니다.</td></tr>');
             
             // IPv6 트래픽 테이블 채우기
             var ipv6Html = '';
             ipv6Traffic.forEach(function(item) {
                 ipv6Html += '<tr>' +
-                    '<td>' + item.src_subnet + '</td>' +
+                    '<td><span class="text-info" title="서브넷 효율성: ' + 
+                        (item.subnet_efficiency || 'N/A') + '">' + item.src_subnet + '</span></td>' +
+                    '<td><small class="text-muted">' + (item.src_geo_info || 'Unknown / Unknown / Unknown') + '</small></td>' +
                     '<td>' + item.destination_ip + '</td>' +
+                    '<td><small class="text-muted">' + (item.dst_geo_info || 'Unknown / Unknown / Unknown') + '</small></td>' +
                     '<td>' + item.port_info + '</td>' +
-                    '<td>' + item.occurrence + '</td>' +
-                    '<td>' + item.percentage + '%</td>' +
+                    '<td><span class="badge bg-primary">' + item.occurrence + '</span></td>' +
+                    '<td><span class="text-success">' + item.percentage + '%</span></td>' +
                     '</tr>';
             });
-            $('#ipv6-traffic-body').html(ipv6Html || '<tr><td colspan="5" class="text-center">IPv6 트래픽 데이터가 없습니다.</td></tr>');
+            $('#ipv6-traffic-body').html(ipv6Html || '<tr><td colspan="7" class="text-center">IPv6 트래픽 데이터가 없습니다.</td></tr>');
         }
     }).fail(function(xhr) {
         var errorMsg = '분석 데이터를 로드하는 중 오류가 발생했습니다.';
