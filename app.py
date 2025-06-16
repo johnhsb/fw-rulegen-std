@@ -392,73 +392,6 @@ def api_analysis_data():
         logger.error(f"분석 데이터 로드 오류: {e}")
         return jsonify({'error': '분석 데이터를 로드하는 중 오류가 발생했습니다'}), 500
 
-@app.route('/visualization/<path:filename>')
-def serve_visualization(filename):
-    """시각화 파일 제공 (없는 경우 동적으로 생성)"""
-    # 실제 파일 경로 구성
-    full_path = os.path.join(Config.OUTPUT_DIR, filename)
-    
-    # 파일이 존재하면 그대로 전송
-    if os.path.exists(full_path):
-        return send_file(full_path)
-    
-    # IPv6 관련 시각화 파일인지 확인
-    if '_ipv6.html' in filename:
-        # 시각화 타입 판별
-        viz_type = "데이터 시각화"
-        if 'sankey' in filename:
-            viz_type = "Sankey 다이어그램"
-        elif '3d_interactive' in filename:
-            viz_type = "3D 트래픽 시각화"
-        
-        # 동적 HTML 생성
-        html_content = f"""
-        <!DOCTYPE html>
-        <html lang="ko" data-bs-theme="dark">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>IPv6 데이터 없음</title>
-            <link rel="stylesheet" href="/static/css/bootstrap.min.css">
-            <link rel="stylesheet" href="/static/css/bootstrap-icons.css">
-            <link rel="stylesheet" href="/static/css/style.css">
-            <style>
-                body {{
-                    background-color: #121212 !important; /* 다크 모드 배경색 강제 적용 */
-                    color: #e0e0e0;
-                }}
-                .card {{
-                    background-color: #1e1e1e;
-                    border-color: #333;
-                }}
-            </style>
-        </head>
-        <body class="d-flex justify-content-center align-items-center" style="height: 100vh;">
-            <div class="card shadow-lg">
-                <div class="card-header bg-primary">
-                    <h4 class="mb-0 text-white text-center">IPv6 {viz_type}</h4>
-                </div>
-                <div class="card-body text-center p-4">
-                    <i class="bi bi-info-circle text-info" style="font-size: 48px;"></i>
-                    <h5 class="mt-3">IPv6 데이터가 없습니다</h5>
-                    <p class="mb-0">현재 분석 결과에는 IPv6 트래픽 데이터가 포함되어 있지 않습니다.</p>
-                    <p class="mt-2">IPv4 데이터만 있거나 IPv6 트래픽이 분석되지 않았을 수 있습니다.</p>
-                </div>
-            </div>
-            <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-        </body>
-        </html>
-        """
-        
-        # 응답 생성 및 반환
-        response = make_response(html_content)
-        response.headers['Content-Type'] = 'text/html'
-        response.headers['Cache-Control'] = 'max-age=3600'  # 1시간 캐싱
-        return response
-    
-    # 그 외 파일은 404 반환
-    return abort(404)
-
 @app.route('/policies')
 @login_required
 def view_policies():
@@ -850,6 +783,170 @@ def api_analyze_syslog_file():
         logger.error(f"단일 Syslog 파일 분석 오류: {e}", exc_info=True)
         return jsonify({'error': f'분석 중 오류가 발생했습니다: {str(e)}'}), 500
 
+@app.route('/visualization/<path:filename>')
+def serve_visualization(filename):
+    """시각화 파일 제공 (국가별, ASN별 포함)"""
+    # 실제 파일 경로 구성
+    full_path = os.path.join(Config.OUTPUT_DIR, filename)
+    
+    # 파일이 존재하면 그대로 전송
+    if os.path.exists(full_path):
+        return send_file(full_path)
+    
+    # 동적 HTML 생성을 위한 정보 추출
+    viz_type = "데이터 시각화"
+    ip_version = "IPv4"
+    analysis_type = "일반"
+    
+    # 파일명에서 정보 추출
+    if '_ipv6.html' in filename:
+        ip_version = "IPv6"
+    
+    if 'sankey_country' in filename:
+        viz_type = "국가별 트래픽 흐름"
+        analysis_type = "국가별"
+    elif 'sankey_asn' in filename:
+        viz_type = "ASN별 트래픽 흐름"  
+        analysis_type = "ASN별"
+    elif 'sankey' in filename:
+        viz_type = "Sankey 다이어그램"
+        analysis_type = "IP별"
+    elif '3d_interactive' in filename:
+        viz_type = "3D 트래픽 시각화"
+        analysis_type = "3D"
+    
+    # 동적 HTML 생성
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="ko" data-bs-theme="dark">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{ip_version} {analysis_type} 분석 - 데이터 없음</title>
+        <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+        <link rel="stylesheet" href="/static/css/bootstrap-icons.css">
+        <style>
+            body {{
+                background-color: #121212 !important;
+                color: #e0e0e0;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }}
+            .card {{
+                background-color: #1e1e1e;
+                border-color: #333;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            }}
+            .card-header {{
+                background: linear-gradient(135deg, #1a1a2e, #16213e);
+                border-bottom-color: #333;
+            }}
+            .info-icon {{
+                font-size: 64px;
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+            }}
+            .feature-badge {{
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 20px;
+                font-weight: 500;
+                font-size: 0.9rem;
+            }}
+            .suggestion-list {{
+                background-color: #1a1a1a;
+                border-radius: 8px;
+                padding: 20px;
+                margin-top: 20px;
+            }}
+            .suggestion-item {{
+                display: flex;
+                align-items: center;
+                margin-bottom: 12px;
+                padding: 8px;
+                border-radius: 6px;
+                transition: background-color 0.2s;
+            }}
+            .suggestion-item:hover {{
+                background-color: #2d2d2d;
+            }}
+            .suggestion-icon {{
+                margin-right: 12px;
+                color: #667eea;
+            }}
+        </style>
+    </head>
+    <body class="d-flex justify-content-center align-items-center" style="min-height: 100vh; padding: 20px;">
+        <div class="container" style="max-width: 600px;">
+            <div class="card shadow-lg">
+                <div class="card-header text-center">
+                    <h4 class="mb-0 text-white">
+                        <i class="bi bi-{"globe" if "country" in analysis_type.lower() else "building" if "asn" in analysis_type.lower() else "diagram-3"} me-2"></i>
+                        {ip_version} {viz_type}
+                    </h4>
+                    <span class="feature-badge mt-2">
+                        {"🌍 GeoIP 기반" if analysis_type in ["국가별", "ASN별"] else "📊 트래픽 분석"}
+                    </span>
+                </div>
+                <div class="card-body text-center p-4">
+                    <div class="info-icon mb-3">
+                        <i class="bi bi-info-circle"></i>
+                    </div>
+                    <h5 class="mb-3">{ip_version} {analysis_type} 데이터가 없습니다</h5>
+                    
+                    <div class="alert alert-info border-0" style="background-color: rgba(13, 202, 240, 0.1); border-left: 4px solid #0dcaf0;">
+                        <p class="mb-2">현재 분석 결과에는 {ip_version} {analysis_type} 트래픽 데이터가 포함되어 있지 않습니다.</p>
+                        <small class="text-muted">
+                            {"다른 IP 버전의 데이터만 있거나 해당 트래픽이 분석되지 않았을 수 있습니다." if ip_version == "IPv6" else "IPv6 트래픽이 없거나 필터링되었을 수 있습니다."}
+                        </small>
+                    </div>
+                    
+                    <div class="suggestion-list">
+                        <h6 class="text-light mb-3"><i class="bi bi-lightbulb me-2"></i>해결 방법</h6>
+                        
+                        <div class="suggestion-item">
+                            <i class="bi bi-check-circle suggestion-icon"></i>
+                            <span>다른 IP 버전 탭을 확인해보세요</span>
+                        </div>
+                        
+                        <div class="suggestion-item">
+                            <i class="bi bi-funnel suggestion-icon"></i>
+                            <span>분석 필터 설정을 다시 확인해보세요</span>
+                        </div>
+                        
+                        {"<div class='suggestion-item'><i class='bi bi-database suggestion-icon'></i><span>GeoIP 데이터베이스가 정상적으로 로드되었는지 확인하세요</span></div>" if analysis_type in ["국가별", "ASN별"] else ""}
+                        
+                        <div class="suggestion-item">
+                            <i class="bi bi-arrow-clockwise suggestion-icon"></i>
+                            <span>새로운 로그 데이터로 다시 분석해보세요</span>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <button onclick="window.parent.history.back()" class="btn btn-outline-light me-2">
+                            <i class="bi bi-arrow-left me-1"></i>이전으로
+                        </button>
+                        <button onclick="window.parent.location.reload()" class="btn btn-primary">
+                            <i class="bi bi-arrow-clockwise me-1"></i>새로고침
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    </body>
+    </html>
+    """
+    
+    # 응답 생성 및 반환
+    response = make_response(html_content)
+    response.headers['Content-Type'] = 'text/html; charset=utf-8'
+    response.headers['Cache-Control'] = 'max-age=3600'  # 1시간 캐싱
+    return response 
+
 #----- 유틸리티 함수 -----#
 
 def get_filter_params_from_request(form_data):
@@ -1088,6 +1185,26 @@ def create_visualizations(analyzer, timestamp):
     sankey_prefix = os.path.join(Config.OUTPUT_DIR, f"traffic_sankey_{timestamp}")
     sankey_files = analyzer.visualize_traffic_sankey(sankey_prefix)
     visualizations['sankey'] = sankey_files
+
+    # 국가별 Sankey 다이어그램
+    try:
+        country_sankey_prefix = os.path.join(Config.OUTPUT_DIR, f"traffic_sankey_country_{timestamp}")
+        country_sankey_files = analyzer.visualize_traffic_sankey_by_country(country_sankey_prefix)
+        visualizations['sankey_country'] = country_sankey_files
+        logger.info("국가별 Sankey 다이어그램 생성 완료")
+    except Exception as e:
+        logger.error(f"국가별 Sankey 다이어그램 생성 오류: {e}")
+        visualizations['sankey_country'] = {}
+    
+    # ASN별 Sankey 다이어그램
+    try:
+        asn_sankey_prefix = os.path.join(Config.OUTPUT_DIR, f"traffic_sankey_asn_{timestamp}")
+        asn_sankey_files = analyzer.visualize_traffic_sankey_by_asn(asn_sankey_prefix)
+        visualizations['sankey_asn'] = asn_sankey_files
+        logger.info("ASN별 Sankey 다이어그램 생성 완료")
+    except Exception as e:
+        logger.error(f"ASN별 Sankey 다이어그램 생성 오류: {e}")
+        visualizations['sankey_asn'] = {}
     
     # 3D 시각화
     viz_prefix = os.path.join(Config.OUTPUT_DIR, f"traffic_3d_interactive_{timestamp}")
