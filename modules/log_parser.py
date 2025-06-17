@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # 주니퍼 syslog 패턴 정규식
 JUNIPER_SESSION_PATTERN = re.compile(
     r'.*RT_FLOW: RT_FLOW_SESSION_(?:CREATE|CLOSE):' # 세션 시작/종료
-    r'(?:\s+session\s+closed\s+([\w\s]+):)?\s*' # 세션 종료 원인 (선택적)
+    r'(?:\s+session\s+([a-zA-Z\s]+)):?\s*' # 세션 종료 원인 (선택적)
     r'([\d\.a-fA-F:]+)/(\d+)->([\d\.a-fA-F:]+)/(\d+)' # 첫 번째 IP 주소/포트 쌍
     r'\s+0x\d+\s+([\w-]+)\s+' # 서비스 이름 (icmp, icmpv6 등)
     r'[\d\.a-fA-F:]+/\d+->[\d\.a-fA-F:]+/\d+\s+' # 중간 부분 (고정 패턴)

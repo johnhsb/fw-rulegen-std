@@ -12,7 +12,8 @@ from datetime import datetime
 # 기존 정규식 패턴
 ORIGINAL_PATTERN = re.compile(
     r'.*RT_FLOW: RT_FLOW_SESSION_(?:CREATE|CLOSE):' # 세션 시작/종료
-    r'(?:\s+session\s+closed\s+([\w\s]+):)?\s*' # 세션 종료 원인 (선택적)
+#   r'(?:\s+session\s+closed\s+([\w\s]+):)?\s*' # 세션 종료 원인 (선택적)
+    r'(?:\s+session\s+([a-zA-Z\s]+)):?\s*' # 세션 종료 원인 (선택적)
     r'([\d\.a-fA-F:]+)/(\d+)->([\d\.a-fA-F:]+)/(\d+)' # 첫 번째 IP 주소/포트 쌍
     r'\s+0x\d+\s+([\w-]+)\s+' # 정책 이름 (None, junos-dns-udp, icmp 등)
     r'[\d\.a-fA-F:]+/\d+->[\d\.a-fA-F:]+/\d+'  # 중간 IP 부분 (무시)
@@ -31,7 +32,8 @@ ORIGINAL_PATTERN = re.compile(
 
 IMPROVED_PATTERN = re.compile(
     r'.*RT_FLOW: RT_FLOW_SESSION_(?:CREATE|CLOSE):' # 세션 시작/종료
-    r'(?:\s+session\s+closed\s+([\w\s]+):)?\s*' # 세션 종료 원인 (선택적)
+#   r'(?:\s+session\s+closed\s+([\w\s]+):)?\s*' # 세션 종료 원인 (선택적)
+    r'(?:\s+session\s+([a-zA-Z\s]+)):?\s*' # 세션 종료 원인 (선택적)
     r'([\d\.a-fA-F:]+)/(\d+)->([\d\.a-fA-F:]+)/(\d+)' # 첫 번째 IP 주소/포트 쌍
     r'\s+0x\d+\s+([\w-]+)\s+' # 서비스 이름 (icmp, icmpv6 등)
     r'[\d\.a-fA-F:]+/\d+->[\d\.a-fA-F:]+/\d+\s+' # 중간 부분 (고정 패턴)
@@ -108,8 +110,9 @@ def flexible_parse(line):
 def test_patterns():
     # 테스트할 로그 라인
     test_logs = [
-    "2025-04-16 15:12:59 10.7.2.132 <14>Apr 16 15:12:59 O_FW_1 RT_FLOW: RT_FLOW_SESSION_CLOSE: session closed TCP FIN: 10.1.6.190/46717->122.35.0.31/23004 0x0 None 10.1.6.190/46717->122.35.0.31/23004 0x0 N/A N/A N/A N/A 6 4 V1-Trust V1-Untrust 115965252302 6(436) 5(370) 328 UNKNOWN UNKNOWN N/A(N/A) reth0.0 UNKNOWN N/A N/A -1 N/A NA 0 0.0.0.0/0->0.0.0.0/0 NA NA N/A N/A Off root 0 N/A N/A"
         # 다양한 로그 형식을 여기에 추가할 수 있습니다
+    "<14>Jun 17 16:49:31 TA-FW_SRX1500 RT_FLOW: RT_FLOW_SESSION_CREATE: session created 10.1.37.45/41013->180.225.82.115/3306 0x0 None 10.1.37.45/41013->180.225.82.115/3306 0x0 N/A N/A N/A N/A 6 1 V40 V30 1047299 N/A(N/A) reth2.0 UNKNOWN UNKNOWN UNKNOWN N/A N/A -1 N/A N/A N/A Off root",
+    #    "<14>Jun 16 17:01:02 TA-FW_SRX1500 RT_FLOW: RT_FLOW_SESSION_CLOSE: session closed TCP FIN: 122.35.0.54/59287->10.1.2.200/3306 0x0 None 122.35.0.54/59287->10.1.2.200/3306 0x0 N/A N/A N/A N/A 6 1 V40 Untrust 1714411 10(550) 9(709) 1 UNKNOWN UNKNOWN N/A(N/A) reth2.0 UNKNOWN N/A N/A -1 N/A NA 0 0.0.0.0/0->0.0.0.0/0 NA NA N/A N/A Off root"
     ]
     
     print("=" * 80)
@@ -187,6 +190,8 @@ def parse_log_file(file_path):
                     # 기존 패턴 테스트
                     if ORIGINAL_PATTERN.match(line):
                         original_success += 1
+                    else:
+                        print(f"{line}")
                     
                     # 개선된 패턴 테스트
                     if IMPROVED_PATTERN.match(line):
