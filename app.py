@@ -284,7 +284,7 @@ def api_analyze_logs():
         analyzer.cluster_traffic_patterns()
 
         # 분석 결과 생성
-        top_traffic_df = analyzer.analyze_top_traffic_patterns(top_n=top_n)
+        top_traffic_df = analyzer.analyze_top_traffic_patterns(top_n=top_n, subnet_grouping='/32')
         policies = analyzer.generate_policy_recommendations()
         config = PolicyGenerator(policies).generate_juniper_config()
 
@@ -705,7 +705,7 @@ def api_analyze_syslog_file():
         analyzer.cluster_traffic_patterns()
 
         # 분석 결과 (상위 트래픽 패턴, 클러스터링 등)
-        top_traffic_df = analyzer.analyze_top_traffic_patterns(top_n=top_n)
+        top_traffic_df = analyzer.analyze_top_traffic_patterns(top_n=top_n, subnet_grouping='/32')
         policies = analyzer.generate_policy_recommendations()
         config = PolicyGenerator(policies).generate_juniper_config()
 
@@ -946,6 +946,84 @@ def serve_visualization(filename):
     response.headers['Content-Type'] = 'text/html; charset=utf-8'
     response.headers['Cache-Control'] = 'max-age=3600'  # 1시간 캐싱
     return response 
+
+@app.route('/api/traffic_patterns', methods=['POST'])
+@login_required
+def api_traffic_patterns():
+    """실시간 트래픽 패턴 분석 API (서브넷 그룹핑 옵션 지원)"""
+    try:
+        timestamp = request.form.get('timestamp')
+        subnet_grouping = request.form.get('subnet_grouping', '/32')
+        top_n = int(request.form.get('top_n', 100))
+        
+        if not timestamp:
+            return jsonify({'error': '타임스탬프가 필요합니다'}), 400
+        
+        # 분석 결과 로드
+        analysis_result = load_analysis_result(timestamp)
+        if not analysis_result:
+            return jsonify({'error': '해당 타임스탬프의 분석 결과를 찾을 수 없습니다'}), 404
+        
+        # 로그 파일 경로 확인
+        log_files = analysis_result.get('log_files', [])
+        if not log_files:
+            return jsonify({'error': '원본 로그 파일 정보가 없습니다'}), 400
+        
+        # 로그 파일 존재 확인
+        existing_files = [f for f in log_files if os.path.exists(f)]
+        if not existing_files:
+            return jsonify({'error': '원본 로그 파일을 찾을 수 없습니다'}), 400
+        
+        # 기존 필터 설정 가져오기
+        filters = analysis_result.get('filters', {})
+        
+        # 로그 재파싱
+        parser = LogParser(log_files=existing_files)
+        log_df = parser.process_logs()
+        
+        if log_df.empty:
+            return jsonify({'error': '유효한 로그 데이터가 없습니다'}), 400
+        
+        # 필터 적용
+        filtered_df = apply_filters(log_df, filters)
+        
+        if filtered_df.empty:
+            return jsonify({'error': '필터링 후 남은 데이터가 없습니다'}), 400
+        
+        # 기존 분석 파라미터 사용
+        params = analysis_result.get('params', {
+            'min_occurrences': 1,
+            'eps': 0.5,
+            'min_samples': 2,
+            'max_data_points': 10000
+        })
+        
+        # 트래픽 분석기 생성
+        analyzer = TrafficAnalyzer(filtered_df, **params)
+        analyzer.cluster_traffic_patterns()
+        
+        # 새로운 서브넷 그룹핑으로 상위 트래픽 분석
+        top_traffic_df = analyzer.analyze_top_traffic_patterns(
+            top_n=top_n, 
+            subnet_grouping=subnet_grouping
+        )
+        
+        if top_traffic_df is None or top_traffic_df.empty:
+            return jsonify({'traffic_patterns': [], 'subnet_grouping': subnet_grouping})
+        
+        # 결과를 딕셔너리로 변환
+        traffic_patterns = top_traffic_df.to_dict('records')
+        
+        return jsonify({
+            'success': True,
+            'traffic_patterns': traffic_patterns,
+            'subnet_grouping': subnet_grouping,
+            'total_patterns': len(traffic_patterns)
+        })
+        
+    except Exception as e:
+        logger.error(f"트래픽 패턴 분석 API 오류: {e}", exc_info=True)
+        return jsonify({'error': f'분석 중 오류가 발생했습니다: {str(e)}'}), 500
 
 #----- 유틸리티 함수 -----#
 

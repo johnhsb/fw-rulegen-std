@@ -560,8 +560,14 @@ class TrafficAnalyzer:
         self.clustered_df = df
         return df
     
-    def analyze_top_traffic_patterns(self, top_n=50):
-        """동적 서브넷을 사용한 상위 트래픽 패턴 분석 (GeoIP 정보 포함)"""
+    def analyze_top_traffic_patterns(self, top_n=50, subnet_grouping='/32'):
+        """
+        개별 IP 기반 상위 트래픽 패턴 분석 (동적 서브넷 그룹핑 옵션)
+        
+        Args:
+            top_n (int): 상위 N개 패턴 반환
+            subnet_grouping (str): 서브넷 그룹핑 옵션 ('/32', '/24', '/16', 'auto')
+        """
         if self.clustered_df is None:
             self.cluster_traffic_patterns()
         
@@ -569,7 +575,7 @@ class TrafficAnalyzer:
             logger.error("분석할 데이터가 없습니다!")
             return None
         
-        logger.info(f"상위 {top_n} 트래픽 패턴 분석 중 (동적 서브넷 + GeoIP 정보 사용)...")
+        logger.info(f"상위 {top_n} 트래픽 패턴 분석 중 (서브넷 그룹핑: {subnet_grouping})")
         
         def truncate_asn_org(org_name, max_words=2):
             """ASN 기관명을 지정된 단어 수만큼 잘라내기"""
@@ -581,6 +587,32 @@ class TrafficAnalyzer:
                 return org_name
             
             return ' '.join(words[:max_words])
+        
+        def apply_subnet_grouping(ip, grouping_option, is_ipv6=False):
+            """IP 주소에 서브넷 그룹핑 적용"""
+            try:
+                if grouping_option == '/32' or grouping_option == '/128':
+                    # 개별 IP 주소 그대로 반환
+                    return ip
+                elif grouping_option == 'auto':
+                    # 기존 동적 서브넷 사용
+                    return ip  # 이 경우는 기존 로직 사용
+                else:
+                    # 지정된 프리픽스 적용
+                    if is_ipv6:
+                        if grouping_option == '/24':
+                            grouping_option = '/64'  # IPv6에서는 /64 사용
+                        elif grouping_option == '/16':
+                            grouping_option = '/48'  # IPv6에서는 /48 사용
+                        
+                        network = ipaddress.IPv6Network(f"{ip}{grouping_option}", strict=False)
+                    else:
+                        network = ipaddress.IPv4Network(f"{ip}{grouping_option}", strict=False)
+                    
+                    return str(network)
+            except Exception as e:
+                logger.warning(f"서브넷 그룹핑 오류 {ip}: {e}")
+                return ip
         
         result_dfs = []
         
@@ -594,20 +626,21 @@ class TrafficAnalyzer:
             if version_df.empty:
                 continue
             
-            if 'src_subnet' not in version_df.columns:
-                if is_ipv6:
-                    version_df['src_subnet'] = version_df['source_ip'].apply(
-                        lambda x: str(ipaddress.IPv6Network(f"{x}/64", strict=False)))
-                else:
-                    version_df['src_subnet'] = version_df['source_ip'].apply(
-                        lambda x: str(ipaddress.IPv4Network(f"{x}/24", strict=False)))
+            # 서브넷 그룹핑 적용
+            if subnet_grouping == 'auto' and 'src_subnet' in version_df.columns:
+                # 기존 동적 서브넷 사용
+                version_df['grouped_src_ip'] = version_df['src_subnet']
+            else:
+                # 지정된 서브넷 그룹핑 사용
+                version_df['grouped_src_ip'] = version_df['source_ip'].apply(
+                    lambda ip: apply_subnet_grouping(ip, subnet_grouping, is_ipv6)
+                )
             
-            agg_cols = ['src_subnet', 'destination_ip', 'protocol', 'destination_port']
+            # 그룹핑된 소스 IP, 목적지 IP, 프로토콜, 포트별로 집계
+            agg_cols = ['grouped_src_ip', 'destination_ip', 'protocol', 'destination_port']
             traffic_grouped = version_df.groupby(agg_cols).agg({
                 'occurrence': 'sum',
-                'source_ip': lambda x: list(set(x)),
-                'src_subnet_prefix': lambda x: x.iloc[0] if 'src_subnet_prefix' in x else None,
-                'subnet_efficiency': lambda x: x.iloc[0] if 'subnet_efficiency' in x else None
+                'source_ip': lambda x: list(set(x)),  # 원본 IP 목록 보존
             }).reset_index()
             
             traffic_grouped.sort_values('occurrence', ascending=False, inplace=True)
@@ -616,25 +649,39 @@ class TrafficAnalyzer:
             total_traffic = traffic_grouped['occurrence'].sum()
             top_traffic.loc[:, 'percentage'] = (top_traffic['occurrence'] / max(total_traffic, 1) * 100).round(2)
             
+            # 소스 IP 개수 계산
             top_traffic['src_ip_count'] = top_traffic['source_ip'].apply(len)
             
+            # 포트 정보 생성
             top_traffic['port_info'] = top_traffic.apply(
                 lambda row: f"{row['destination_port']}({row['protocol']})", axis=1)
             
-            top_traffic['subnet_info'] = top_traffic.apply(
-                lambda row: f"{row['src_subnet']} (/{row.get('src_subnet_prefix', 'N/A')}, " +
-                           f"효율성: {row.get('subnet_efficiency', 0):.2f})" 
-                           if pd.notna(row.get('src_subnet_prefix')) else row['src_subnet'], 
-                axis=1
-            )
+            # 서브넷 효율성 계산 (개별 IP인 경우)
+            if subnet_grouping == '/32' or subnet_grouping == '/128':
+                top_traffic['subnet_efficiency'] = 1.0
+                top_traffic['subnet_info'] = top_traffic['grouped_src_ip'] + f" ({subnet_grouping})"
+            else:
+                top_traffic['subnet_efficiency'] = top_traffic.apply(
+                    lambda row: row['src_ip_count'] / max(1, self._get_subnet_capacity(row['grouped_src_ip'])), 
+                    axis=1
+                )
+                top_traffic['subnet_info'] = top_traffic.apply(
+                    lambda row: f"{row['grouped_src_ip']} (효율성: {row['subnet_efficiency']:.2f})", 
+                    axis=1
+                )
             
             # GeoIP 정보 추가
             logger.info("GeoIP 정보 조회 중...")
             
-            # 소스 서브넷의 대표 IP로 첫 번째 소스 IP 사용
-            top_traffic['src_representative_ip'] = top_traffic['source_ip'].apply(
-                lambda ip_list: ip_list[0] if ip_list else ''
-            )
+            # 대표 IP 선택
+            if subnet_grouping == '/32' or subnet_grouping == '/128':
+                # 개별 IP인 경우 자기 자신
+                top_traffic['src_representative_ip'] = top_traffic['grouped_src_ip']
+            else:
+                # 서브넷인 경우 첫 번째 소스 IP 사용
+                top_traffic['src_representative_ip'] = top_traffic['source_ip'].apply(
+                    lambda ip_list: ip_list[0] if ip_list else ''
+                )
             
             # 소스 IP GeoIP 정보
             top_traffic['src_country'] = top_traffic['src_representative_ip'].apply(
@@ -682,19 +729,39 @@ class TrafficAnalyzer:
             )
             
             # 최종 결과 DataFrame 구성
-            result_df = top_traffic[['src_subnet', 'subnet_info', 'src_geo_info', 
+            result_df = top_traffic[['grouped_src_ip', 'subnet_info', 'src_geo_info', 
                                     'destination_ip', 'dst_geo_info',
                                     'protocol', 'destination_port', 'port_info', 
-                                    'occurrence', 'percentage', 'src_ip_count']].copy()
+                                    'occurrence', 'percentage', 'src_ip_count', 'source_ip']].copy()
+            
+            # 컬럼명 변경 (기존 템플릿 호환성 유지)
+            result_df.rename(columns={
+                'grouped_src_ip': 'src_subnet',
+                'source_ip': 'original_source_ips'
+            }, inplace=True)
             
             result_df.loc[:, 'is_ipv6'] = is_ipv6
+            result_df.loc[:, 'subnet_grouping'] = subnet_grouping
             result_dfs.append(result_df)
         
         if not result_dfs:
             return pd.DataFrame()
         
-        logger.info("GeoIP 정보가 포함된 트래픽 패턴 분석 완료")
+        logger.info(f"트래픽 패턴 분석 완료 (서브넷 그룹핑: {subnet_grouping})")
         return pd.concat(result_dfs)
+    
+    def _get_subnet_capacity(self, subnet_str):
+        """서브넷의 최대 IP 용량 계산"""
+        try:
+            if ':' in subnet_str:  # IPv6
+                network = ipaddress.IPv6Network(subnet_str)
+                # IPv6는 너무 크므로 64비트로 제한
+                return min(network.num_addresses, 2**64)
+            else:  # IPv4
+                network = ipaddress.IPv4Network(subnet_str)
+                return network.num_addresses
+        except:
+            return 1 
 
     def optimize_ip_ranges(self, ip_list):
         """IP 주소 목록을 최적화된 CIDR 블록으로 변환 (IPv4/IPv6 지원)"""

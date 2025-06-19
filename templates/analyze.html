@@ -133,72 +133,95 @@
     }
     
     /* 테이블 컬럼 너비 조정 */
-    .table th:nth-child(1), .table td:nth-child(1) { /* 출발지 서브넷 */
-        width: 20%;
-        min-width: 120px;
-    }
-    
-    .table th:nth-child(2), .table td:nth-child(2) { /* 출발지 지역정보 */
-        width: 15%;
-        min-width: 100px;
-        font-size: 0.8rem;
-    }
-    
-    .table th:nth-child(3), .table td:nth-child(3) { /* 목적지 IP */
-        width: 15%;
-        min-width: 120px;
-    }
-    
-    .table th:nth-child(4), .table td:nth-child(4) { /* 목적지 지역정보 */
-        width: 15%;
-        min-width: 100px;
-        font-size: 0.8rem;
-    }
-    
-    .table th:nth-child(5), .table td:nth-child(5) { /* 포트 정보 */
-        width: 12%;
-        min-width: 80px;
-    }
-    
-    .table th:nth-child(6), .table td:nth-child(6) { /* 발생 횟수 */
-        width: 10%;
-        min-width: 70px;
-        text-align: center;
-    }
-    
-    .table th:nth-child(7), .table td:nth-child(7) { /* 비율 */
+    .table th:nth-child(1), .table td:nth-child(1) { /* 순위 */
         width: 8%;
         min-width: 60px;
         text-align: center;
     }
     
+    .table th:nth-child(2), .table td:nth-child(2) { /* 출발지 서브넷 */
+        width: 18%;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(3), .table td:nth-child(3) { /* 출발지 지역정보 */
+        width: 15%;
+        min-width: 100px;
+        font-size: 0.8rem;
+    }
+    
+    .table th:nth-child(4), .table td:nth-child(4) { /* 목적지 IP */
+        width: 15%;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(5), .table td:nth-child(5) { /* 목적지 지역정보 */
+        width: 15%;
+        min-width: 100px;
+        font-size: 0.8rem;
+    }
+    
+    .table th:nth-child(6), .table td:nth-child(6) { /* 포트 정보 */
+        width: 10%;
+        min-width: 80px;
+    }
+    
+    .table th:nth-child(7), .table td:nth-child(7) { /* 발생 횟수 */
+        width: 8%;
+        min-width: 70px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(8), .table td:nth-child(8) { /* 비율 */
+        width: 8%;
+        min-width: 60px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(9), .table td:nth-child(9) { /* 소스 IP 수 */
+        width: 8%;
+        min-width: 70px;
+        text-align: center;
+    }
+    
     /* 반응형 테이블 조정 */
     @media (max-width: 1200px) {
-        .table th:nth-child(2), .table td:nth-child(2),
-        .table th:nth-child(4), .table td:nth-child(4) {
+        .table th:nth-child(3), .table td:nth-child(3),
+        .table th:nth-child(5), .table td:nth-child(5) {
             font-size: 0.7rem;
             padding: 0.5rem 0.25rem;
         }
     }
     
     @media (max-width: 768px) {
-        .table th:nth-child(2), .table td:nth-child(2),
-        .table th:nth-child(4), .table td:nth-child(4) {
+        .table th:nth-child(3), .table td:nth-child(3),
+        .table th:nth-child(5), .table td:nth-child(5) {
             display: none; /* 모바일에서는 지역정보 숨김 */
         }
         
-        .table th:nth-child(1), .table td:nth-child(1),
-        .table th:nth-child(3), .table td:nth-child(3) {
+        .table th:nth-child(2), .table td:nth-child(2),
+        .table th:nth-child(4), .table td:nth-child(4) {
             width: 25%;
         }
         
-        .table th:nth-child(5), .table td:nth-child(5) {
+        .table th:nth-child(6), .table td:nth-child(6) {
             width: 20%;
         }
         
-        .table th:nth-child(6), .table td:nth-child(6),
-        .table th:nth-child(7), .table td:nth-child(7) {
+        .table th:nth-child(7), .table td:nth-child(7),
+        .table th:nth-child(8), .table td:nth-child(8),
+        .table th:nth-child(9), .table td:nth-child(9) {
             width: 15%;
+        }
+        
+        .d-flex.justify-content-between {
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .d-flex.align-items-center {
+            flex-wrap: wrap;
+            gap: 5px;
         }
     }
     
@@ -214,6 +237,111 @@
         overflow: hidden;
         text-overflow: ellipsis;
         max-width: 120px;
+    }
+
+    /* 서브넷 그룹핑 컨트롤 스타일 */
+    .grouping-controls {
+        background-color: #1a1a1a;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #333;
+        margin-bottom: 15px;
+    }
+
+    .form-select-sm {
+        background-color: #2d2d2d;
+        border-color: #444;
+        color: #e0e0e0;
+        font-size: 0.875rem;
+        min-width: 120px;
+    }
+
+    .form-select-sm:focus {
+        background-color: #333;
+        border-color: #555;
+        color: #e0e0e0;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+    }
+
+    .form-select-sm option {
+        background-color: #2d2d2d;
+        color: #e0e0e0;
+    }
+
+    /* 로딩 인디케이터 스타일 */
+    #patternsLoading {
+        background-color: #1a1a1a;
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px solid #444;
+        color: #adb5bd;
+    }
+
+    /* 순위 배지 스타일 */
+    .badge.bg-primary {
+        background-color: #0d6efd !important;
+        font-weight: 500;
+    }
+
+    .badge.bg-success {
+        background-color: #198754 !important;
+        font-weight: 500;
+    }
+
+    .badge.bg-info {
+        background-color: #0dcaf0 !important;
+        color: #000 !important;
+        font-weight: 500;
+    }
+
+    /* 테이블 헤더 개선 */
+    .table thead th {
+        background-color: #2d2d2d !important;
+        color: #e0e0e0 !important;
+        border-color: #444 !important;
+        font-weight: 600;
+        font-size: 0.875rem;
+        white-space: nowrap;
+    }
+
+    /* 테이블 행 호버 효과 개선 */
+    .table-hover tbody tr:hover {
+        background-color: #2a2a2a !important;
+        transition: background-color 0.2s ease;
+    }
+
+    /* 트래픽 패턴 강조 */
+    .text-info {
+        color: #58a6ff !important;
+        font-weight: 500;
+    }
+
+    .text-warning {
+        color: #ffd43b !important;
+        font-weight: 500;
+    }
+
+    /* 카운트 배지 애니메이션 */
+    .badge {
+        transition: all 0.3s ease;
+    }
+
+    .nav-link .badge {
+        margin-left: 5px;
+        font-size: 0.75rem;
+    }
+
+    /* 새로고침 버튼 스타일 */
+    .btn-outline-primary:hover {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+        transform: translateY(-1px);
+        transition: all 0.2s ease;
+    }
+
+    /* 스피너 색상 */
+    .spinner-border-sm {
+        color: #0dcaf0;
     }
 </style>
 {% endblock %}
@@ -425,12 +553,50 @@
         <div class="tab-pane fade show active" id="traffic" role="tabpanel">
             <div class="card mt-3">
                 <div class="card-header">
+                    <!-- 서브넷 그룹핑 컨트롤 -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0">상위 트래픽 패턴</h5>
+                        <div class="d-flex align-items-center">
+                            <label for="subnetGrouping" class="form-label me-2 mb-0">서브넷 그룹핑:</label>
+                            <select class="form-select form-select-sm me-3" id="subnetGrouping" style="width: auto;">
+                                <option value="/32">개별 IP (/32)</option>
+                                <option value="/24">클래스 C (/24)</option>
+                                <option value="/16">클래스 B (/16)</option>
+                                <option value="auto">동적 서브넷</option>
+                            </select>
+                            <label for="topNSelect" class="form-label me-2 mb-0">표시 개수:</label>
+                            <select class="form-select form-select-sm me-3" id="topNSelect" style="width: auto;">
+                                <option value="50">상위 50개</option>
+                                <option value="100" selected>상위 100개</option>
+                                <option value="200">상위 200개</option>
+                                <option value="500">상위 500개</option>
+                            </select>
+                            <button class="btn btn-outline-primary btn-sm" id="refreshPatterns">
+                                <i class="bi bi-arrow-clockwise"></i> 새로고침
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- 로딩 인디케이터 -->
+                    <div class="d-none" id="patternsLoading">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                                <span class="visually-hidden">로딩 중...</span>
+                            </div>
+                            <span>트래픽 패턴을 분석 중입니다...</span>
+                        </div>
+                    </div>
+                    
                     <ul class="nav nav-tabs card-header-tabs" id="ipVersionTabs" role="tablist">
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="ipv4-traffic-tab" data-bs-toggle="tab" data-bs-target="#ipv4-traffic" type="button" role="tab">IPv4 트래픽</button>
+                            <button class="nav-link active" id="ipv4-traffic-tab" data-bs-toggle="tab" data-bs-target="#ipv4-traffic" type="button" role="tab">
+                                IPv4 트래픽 <span class="badge bg-secondary" id="ipv4-count">0</span>
+                            </button>
                         </li>
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="ipv6-traffic-tab" data-bs-toggle="tab" data-bs-target="#ipv6-traffic" type="button" role="tab">IPv6 트래픽</button>
+                            <button class="nav-link" id="ipv6-traffic-tab" data-bs-toggle="tab" data-bs-target="#ipv6-traffic" type="button" role="tab">
+                                IPv6 트래픽 <span class="badge bg-secondary" id="ipv6-count">0</span>
+                            </button>
                         </li>
                     </ul>
                 </div>
@@ -441,17 +607,22 @@
                                 <table class="table table-dark table-striped table-hover">
                                     <thead>
                                         <tr>
-                                            <th>출발지 서브넷</th>
+                                            <th>순위</th>
+                                            <th>출발지 IP/서브넷</th>
                                             <th>출발지 지역정보</th>
                                             <th>목적지 IP</th>
                                             <th>목적지 지역정보</th>
                                             <th>포트 정보</th>
                                             <th>발생 횟수</th>
                                             <th>비율</th>
+                                            <th>소스 IP 수</th>
                                         </tr>
                                     </thead>
                                     <tbody id="ipv4-traffic-body">
                                         <!-- 테이블 내용은 Ajax로 로드 -->
+                                        <tr>
+                                            <td colspan="9" class="text-center">데이터를 로딩 중입니다...</td>
+                                        </tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -464,17 +635,22 @@
                                 <table class="table table-dark table-striped table-hover">
                                     <thead>
                                         <tr>
-                                            <th>출발지 서브넷</th>
+                                            <th>순위</th>
+                                            <th>출발지 IP/서브넷</th>
                                             <th>출발지 지역정보</th>
                                             <th>목적지 IP</th>
                                             <th>목적지 지역정보</th>
                                             <th>포트 정보</th>
                                             <th>발생 횟수</th>
                                             <th>비율</th>
+                                            <th>소스 IP 수</th>
                                         </tr>
                                     </thead>
                                     <tbody id="ipv6-traffic-body">
                                         <!-- 테이블 내용은 Ajax로 로드 -->
+                                        <tr>
+                                            <td colspan="9" class="text-center">데이터를 로딩 중입니다...</td>
+                                        </tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -730,8 +906,154 @@ $(document).ready(function() {
     // 타임스탬프가 있으면 시각화 데이터 로드
     loadVisualizationData('{{ timestamp }}');
     loadFilterValues('{{ timestamp }}');
+    
+    // 초기 로드 시 개별 IP(/32) 모드로 트래픽 패턴 로드
+    loadTrafficPatterns('{{ timestamp }}', '/32', 100);
     {% endif %}
+    
+    // 서브넷 그룹핑 옵션 변경 시
+    $('#subnetGrouping, #topNSelect').on('change', function() {
+        var timestamp = '{{ timestamp }}';
+        var subnetGrouping = $('#subnetGrouping').val();
+        var topN = parseInt($('#topNSelect').val());
+        
+        if (timestamp) {
+            loadTrafficPatterns(timestamp, subnetGrouping, topN);
+        }
+    });
+    
+    // 새로고침 버튼 클릭 시
+    $('#refreshPatterns').on('click', function() {
+        var timestamp = '{{ timestamp }}';
+        var subnetGrouping = $('#subnetGrouping').val();
+        var topN = parseInt($('#topNSelect').val());
+        
+        if (timestamp) {
+            loadTrafficPatterns(timestamp, subnetGrouping, topN);
+        }
+    });
+
+    // 툴팁 초기화
+    $('[title]').tooltip();
 });
+
+function loadTrafficPatterns(timestamp, subnetGrouping, topN) {
+    // 로딩 표시
+    $('#patternsLoading').removeClass('d-none');
+    $('#ipv4-traffic-body, #ipv6-traffic-body').html(
+        '<tr><td colspan="9" class="text-center">분석 중입니다...</td></tr>'
+    );
+    
+    $.ajax({
+        url: '/api/traffic_patterns',
+        type: 'POST',
+        data: {
+            timestamp: timestamp,
+            subnet_grouping: subnetGrouping,
+            top_n: topN
+        },
+        success: function(response) {
+            if (response.success && response.traffic_patterns) {
+                displayTrafficPatterns(response.traffic_patterns, subnetGrouping);
+            } else {
+                showError('트래픽 패턴 데이터를 로드할 수 없습니다.');
+            }
+        },
+        error: function(xhr) {
+            var errorMsg = '트래픽 패턴 로드 중 오류가 발생했습니다.';
+            if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMsg = xhr.responseJSON.error;
+            }
+            showError(errorMsg);
+        },
+        complete: function() {
+            $('#patternsLoading').addClass('d-none');
+        }
+    });
+}
+
+function displayTrafficPatterns(patterns, subnetGrouping) {
+    // IPv4와 IPv6 데이터 분리
+    var ipv4Patterns = patterns.filter(function(item) {
+        return !item.is_ipv6;
+    });
+    
+    var ipv6Patterns = patterns.filter(function(item) {
+        return item.is_ipv6;
+    });
+    
+    // 카운트 업데이트
+    $('#ipv4-count').text(ipv4Patterns.length);
+    $('#ipv6-count').text(ipv6Patterns.length);
+    
+    // IPv4 테이블 채우기
+    var ipv4Html = '';
+    if (ipv4Patterns.length > 0) {
+        ipv4Patterns.forEach(function(item, index) {
+            ipv4Html += generateTrafficRow(item, index + 1, subnetGrouping);
+        });
+    } else {
+        ipv4Html = '<tr><td colspan="9" class="text-center">IPv4 트래픽 패턴이 없습니다.</td></tr>';
+    }
+    $('#ipv4-traffic-body').html(ipv4Html);
+    
+    // IPv6 테이블 채우기
+    var ipv6Html = '';
+    if (ipv6Patterns.length > 0) {
+        ipv6Patterns.forEach(function(item, index) {
+            ipv6Html += generateTrafficRow(item, index + 1, subnetGrouping);
+        });
+    } else {
+        ipv6Html = '<tr><td colspan="9" class="text-center">IPv6 트래픽 패턴이 없습니다.</td></tr>';
+    }
+    $('#ipv6-traffic-body').html(ipv6Html);
+    
+    // 툴팁 재초기화
+    $('[title]').tooltip();
+}
+
+function generateTrafficRow(item, rank, subnetGrouping) {
+    var sourceInfo = '';
+    var tooltipInfo = '';
+    
+    if (subnetGrouping === '/32' || subnetGrouping === '/128') {
+        // 개별 IP인 경우
+        sourceInfo = '<span class="text-info">' + item.src_subnet + '</span>';
+        tooltipInfo = '개별 IP 주소';
+    } else {
+        // 서브넷인 경우
+        sourceInfo = '<span class="text-info" title="' + (item.subnet_info || '') + '">' + 
+                    item.src_subnet + '</span>';
+        tooltipInfo = item.subnet_info || '';
+        
+        // 원본 IP 목록이 있는 경우 표시
+        if (item.original_source_ips && item.original_source_ips.length > 1) {
+            var ipListText = item.original_source_ips.slice(0, 5).join(', ');
+            if (item.original_source_ips.length > 5) {
+                ipListText += ' ... (' + item.original_source_ips.length + '개)';
+            }
+            tooltipInfo += '\\n포함된 IP: ' + ipListText;
+        }
+    }
+    
+    return '<tr>' +
+        '<td><span class="badge bg-primary">' + rank + '</span></td>' +
+        '<td title="' + tooltipInfo + '">' + sourceInfo + '</td>' +
+        '<td><small class="text-muted">' + (item.src_geo_info || 'Unknown / Unknown / Unknown') + '</small></td>' +
+        '<td>' + item.destination_ip + '</td>' +
+        '<td><small class="text-muted">' + (item.dst_geo_info || 'Unknown / Unknown / Unknown') + '</small></td>' +
+        '<td>' + item.port_info + '</td>' +
+        '<td><span class="badge bg-success">' + item.occurrence + '</span></td>' +
+        '<td><span class="text-warning">' + item.percentage + '%</span></td>' +
+        '<td><span class="badge bg-info">' + (item.src_ip_count || 1) + '</span></td>' +
+        '</tr>';
+}
+
+function showError(message) {
+    $('#ipv4-traffic-body, #ipv6-traffic-body').html(
+        '<tr><td colspan="9" class="text-center text-danger">' + message + '</td></tr>'
+    );
+}
 
 function loadFilterValues(timestamp) {
     $.getJSON('/api/analysis_data?timestamp=' + timestamp, function(data) {
@@ -820,58 +1142,6 @@ function loadVisualizationData(timestamp) {
     // 3D 시각화 URL 설정
     $('#ipv4-viz3d-iframe').attr('src', '/visualization/traffic_3d_interactive_' + timestamp + '_ipv4.html');
     $('#ipv6-viz3d-iframe').attr('src', '/visualization/traffic_3d_interactive_' + timestamp + '_ipv6.html');
-    
-    // 트래픽 데이터 로드
-    $.getJSON('/api/analysis_data?timestamp=' + timestamp, function(data) {
-        if (data.top_traffic) {
-            // 트래픽 데이터를 IPv4와 IPv6로 분리
-            var ipv4Traffic = data.top_traffic.filter(function(item) {
-                return !item.src_subnet.includes(':');
-            });
-            
-            var ipv6Traffic = data.top_traffic.filter(function(item) {
-                return item.src_subnet.includes(':');
-            });
-            
-            // IPv4 트래픽 테이블 채우기
-            var ipv4Html = '';
-            ipv4Traffic.forEach(function(item) {
-                ipv4Html += '<tr>' +
-                    '<td><span class="text-info" title="서브넷 효율성: ' + 
-                        (item.subnet_efficiency || 'N/A') + '">' + item.src_subnet + '</span></td>' +
-                    '<td><small class="text-muted">' + (item.src_geo_info || 'Unknown / Unknown / Unknown') + '</small></td>' +
-                    '<td>' + item.destination_ip + '</td>' +
-                    '<td><small class="text-muted">' + (item.dst_geo_info || 'Unknown / Unknown / Unknown') + '</small></td>' +
-                    '<td>' + item.port_info + '</td>' +
-                    '<td><span class="badge bg-primary">' + item.occurrence + '</span></td>' +
-                    '<td><span class="text-success">' + item.percentage + '%</span></td>' +
-                    '</tr>';
-            });
-            $('#ipv4-traffic-body').html(ipv4Html || '<tr><td colspan="7" class="text-center">IPv4 트래픽 데이터가 없습니다.</td></tr>');
-            
-            // IPv6 트래픽 테이블 채우기
-            var ipv6Html = '';
-            ipv6Traffic.forEach(function(item) {
-                ipv6Html += '<tr>' +
-                    '<td><span class="text-info" title="서브넷 효율성: ' + 
-                        (item.subnet_efficiency || 'N/A') + '">' + item.src_subnet + '</span></td>' +
-                    '<td><small class="text-muted">' + (item.src_geo_info || 'Unknown / Unknown / Unknown') + '</small></td>' +
-                    '<td>' + item.destination_ip + '</td>' +
-                    '<td><small class="text-muted">' + (item.dst_geo_info || 'Unknown / Unknown / Unknown') + '</small></td>' +
-                    '<td>' + item.port_info + '</td>' +
-                    '<td><span class="badge bg-primary">' + item.occurrence + '</span></td>' +
-                    '<td><span class="text-success">' + item.percentage + '%</span></td>' +
-                    '</tr>';
-            });
-            $('#ipv6-traffic-body').html(ipv6Html || '<tr><td colspan="7" class="text-center">IPv6 트래픽 데이터가 없습니다.</td></tr>');
-        }
-    }).fail(function(xhr) {
-        var errorMsg = '분석 데이터를 로드하는 중 오류가 발생했습니다.';
-        if (xhr.responseJSON && xhr.responseJSON.error) {
-            errorMsg = xhr.responseJSON.error;
-        }
-        alert(errorMsg);
-    });
 }
 </script>
 {% endblock %}
