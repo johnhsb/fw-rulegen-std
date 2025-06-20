@@ -922,17 +922,19 @@ $(document).ready(function() {
     loadTrafficPatterns('{{ timestamp }}', '/32', 100);
     {% endif %}
     
-    // 서브넷 그룹핑 옵션 변경 시
     $('#subnetGrouping, #topNSelect').on('change', function() {
         var timestamp = '{{ timestamp }}';
         var subnetGrouping = $('#subnetGrouping').val();
         var topN = parseInt($('#topNSelect').val());
         
+        // 테이블 헤더 업데이트
+        updateTableHeaders(subnetGrouping);
+        
         if (timestamp) {
             loadTrafficPatterns(timestamp, subnetGrouping, topN);
         }
     });
-    
+
     // 새로고침 버튼 클릭 시
     $('#refreshPatterns').on('click', function() {
         var timestamp = '{{ timestamp }}';
@@ -947,6 +949,42 @@ $(document).ready(function() {
     // 툴팁 초기화
     $('[title]').tooltip();
 });
+
+// 테이블 헤더도 수정이 필요한 경우를 위한 업데이트된 헤더
+function updateTableHeaders(subnetGrouping) {
+    var srcHeader = '출발지 IP';
+    var dstHeader = '목적지 IP';
+    var ipCountHeader = '소스 IP 수';
+    
+    if (subnetGrouping !== '/32' && subnetGrouping !== '/128') {
+        srcHeader = '출발지 서브넷';
+        dstHeader = '목적지 서브넷';
+        ipCountHeader = 'IP 수';
+    }
+    
+    // 헤더 업데이트
+    $('.table thead th:nth-child(2)').text(srcHeader);
+    $('.table thead th:nth-child(4)').text(dstHeader);
+    $('.table thead th:nth-child(9)').text(ipCountHeader);
+}
+
+function showGroupingInfo(response) {
+    if (response.data_source === 'realtime_analysis' && response.subnet_grouping !== '/32') {
+        var infoHtml = '<div class="alert alert-success mt-2" role="alert">' +
+                      '<i class="bi bi-info-circle me-2"></i>' +
+                      '<strong>통합 그룹핑 분석 완료:</strong> ' +
+                      '출발지와 목적지를 함께 최적화하여 분석했습니다. ' +
+                      '효율성 배지를 통해 그룹핑 효과를 확인할 수 있습니다.' +
+                      '</div>';
+        
+        $('.card-header').after(infoHtml);
+        
+        // 5초 후 자동 제거
+        setTimeout(function() {
+            $('.alert-success').fadeOut();
+        }, 8000);
+    }
+}
 
 function loadTrafficPatterns(timestamp, subnetGrouping, topN) {
     // 로딩 표시
@@ -1048,8 +1086,11 @@ function displayTrafficPatterns(patterns, subnetGrouping) {
 
 function generateTrafficRow(item, rank, subnetGrouping) {
     var sourceInfo = '';
+    var destInfo = '';
     var tooltipInfo = '';
+    var destTooltipInfo = '';
     
+    // 출발지 정보 생성
     if (subnetGrouping === '/32' || subnetGrouping === '/128') {
         // 개별 IP인 경우
         sourceInfo = '<span class="text-info">' + item.src_subnet + '</span>';
@@ -1058,28 +1099,85 @@ function generateTrafficRow(item, rank, subnetGrouping) {
         // 서브넷인 경우
         sourceInfo = '<span class="text-info" title="' + (item.subnet_info || '') + '">' + 
                     item.src_subnet + '</span>';
-        tooltipInfo = item.subnet_info || '';
+        tooltipInfo = '출발지 서브넷: ' + item.src_subnet;
         
-        // 원본 IP 목록이 있는 경우 표시
+        // 출발지 원본 IP 목록이 있는 경우 표시
         if (item.original_source_ips && item.original_source_ips.length > 1) {
-            var ipListText = item.original_source_ips.slice(0, 5).join(', ');
+            var srcIpListText = item.original_source_ips.slice(0, 5).join(', ');
             if (item.original_source_ips.length > 5) {
-                ipListText += ' ... (' + item.original_source_ips.length + '개)';
+                srcIpListText += ' ... (' + item.original_source_ips.length + '개)';
             }
-            tooltipInfo += '\\n포함된 IP: ' + ipListText;
+            tooltipInfo += '\\n포함된 출발지 IP: ' + srcIpListText;
+            tooltipInfo += '\\n출발지 효율성: ' + (item.src_efficiency * 100).toFixed(1) + '%';
+        }
+    }
+    
+    // 목적지 정보 생성
+    if (subnetGrouping === '/32' || subnetGrouping === '/128') {
+        // 개별 IP인 경우
+        destInfo = '<span class="text-warning">' + item.destination_ip + '</span>';
+        destTooltipInfo = '개별 목적지 IP';
+    } else {
+        // 목적지도 그룹핑된 경우
+        if (item.dst_subnet && item.dst_subnet !== item.destination_ip) {
+            destInfo = '<span class="text-warning" title="' + destTooltipInfo + '">' + 
+                      item.dst_subnet + '</span>';
+            destTooltipInfo = '목적지 서브넷: ' + item.dst_subnet;
+            
+            // 목적지 원본 IP 목록이 있는 경우 표시
+            if (item.original_destination_ips && item.original_destination_ips.length > 1) {
+                var dstIpListText = item.original_destination_ips.slice(0, 5).join(', ');
+                if (item.original_destination_ips.length > 5) {
+                    dstIpListText += ' ... (' + item.original_destination_ips.length + '개)';
+                }
+                destTooltipInfo += '\\n포함된 목적지 IP: ' + dstIpListText;
+                destTooltipInfo += '\\n목적지 효율성: ' + (item.dst_efficiency * 100).toFixed(1) + '%';
+            }
+        } else {
+            destInfo = '<span class="text-warning">' + item.destination_ip + '</span>';
+            destTooltipInfo = '개별 목적지 IP';
+        }
+    }
+    
+    // 통합 효율성 표시
+    var efficiencyBadge = '';
+    if (item.combined_efficiency && subnetGrouping !== '/32' && subnetGrouping !== '/128') {
+        var efficiencyPercent = (item.combined_efficiency * 100).toFixed(1);
+        var badgeClass = 'bg-success';
+        
+        if (item.combined_efficiency < 0.3) {
+            badgeClass = 'bg-danger';
+        } else if (item.combined_efficiency < 0.6) {
+            badgeClass = 'bg-warning text-dark';
+        }
+        
+        efficiencyBadge = '<br><small><span class="badge ' + badgeClass + '" title="통합 그룹핑 효율성">' + 
+                         efficiencyPercent + '%</span></small>';
+    }
+    
+    // IP 카운트 정보
+    var ipCountInfo = '';
+    if (subnetGrouping !== '/32' && subnetGrouping !== '/128') {
+        var srcCount = item.src_ip_count || 1;
+        var dstCount = item.dst_ip_count || 1;
+        
+        if (srcCount > 1 || dstCount > 1) {
+            ipCountInfo = '<small class="text-muted d-block">' +
+                         srcCount + '개 출발지 → ' + dstCount + '개 목적지</small>';
         }
     }
     
     return '<tr>' +
         '<td><span class="badge bg-primary">' + rank + '</span></td>' +
-        '<td title="' + tooltipInfo + '">' + sourceInfo + '</td>' +
+        '<td title="' + tooltipInfo + '">' + sourceInfo + efficiencyBadge + '</td>' +
         '<td><small class="text-muted">' + (item.src_geo_info || 'Unknown / Unknown / Unknown') + '</small></td>' +
-        '<td>' + item.destination_ip + '</td>' +
+        '<td title="' + destTooltipInfo + '">' + destInfo + '</td>' +
         '<td><small class="text-muted">' + (item.dst_geo_info || 'Unknown / Unknown / Unknown') + '</small></td>' +
-        '<td>' + item.port_info + '</td>' +
+        '<td>' + item.port_info + ipCountInfo + '</td>' +
         '<td><span class="badge bg-success">' + item.occurrence + '</span></td>' +
         '<td><span class="text-warning">' + item.percentage + '%</span></td>' +
-        '<td><span class="badge bg-info">' + (item.src_ip_count || 1) + '</span></td>' +
+        '<td><span class="badge bg-info">' + (item.src_ip_count || 1) + '</span>' +
+        (item.dst_ip_count > 1 ? '<br><span class="badge bg-secondary">' + item.dst_ip_count + '</span>' : '') + '</td>' +
         '</tr>';
 }
 
