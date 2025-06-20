@@ -245,8 +245,10 @@ def api_analyze_logs():
                 missing_files = [file_path for file_path in log_files if not os.path.exists(file_path)]
                 logger.warning(f"일부 원본 로그 파일을 찾을 수 없습니다: {missing_files}")
                 
+                # 수동 업로드의 경우 원본 파일이 없어도 기존 결과 표시
                 if source_type == 'upload':
-                    return jsonify({'error': '원본 로그 파일을 찾을 수 없습니다. 파일을 다시 업로드해주세요.'}), 400
+                    logger.info("수동 업로드 - 원본 파일 없이 기존 분석 결과 표시")
+                    return _return_existing_analysis_result(analysis_result, previous_timestamp)
                 else:  # syslog
                     return jsonify({'error': '원본 Syslog 파일을 찾을 수 없습니다. 새로운 로그가 수집되기를 기다리거나 다른 분석 결과를 선택하세요.'}), 400
             
@@ -360,6 +362,22 @@ def api_analyze_logs():
     except Exception as e:
         logger.error(f"API 분석 오류: {e}", exc_info=True)
         return jsonify({'error': f'분석 중 오류가 발생했습니다: {str(e)}'}), 500
+
+def _return_existing_analysis_result(analysis_result, timestamp):
+    """기존 분석 결과를 그대로 반환"""
+    try:
+        return jsonify({
+            'success': True,
+            'policies_count': len(analysis_result.get('policies', [])),
+            'timestamp': timestamp,
+            'visualizations': analysis_result.get('visualizations', {}),
+            'analysis_type': analysis_result.get('analysis_type', 'stored'),
+            'data_source': 'stored_analysis',
+            'message': '원본 로그 파일을 찾을 수 없어 저장된 분석 결과를 표시합니다.'
+        })
+    except Exception as e:
+        logger.error(f"기존 분석 결과 반환 오류: {e}")
+        return jsonify({'error': '저장된 분석 결과를 로드하는 중 오류가 발생했습니다.'}), 500
 
 @app.route('/api/analysis_data')
 @login_required
@@ -950,7 +968,7 @@ def serve_visualization(filename):
 @app.route('/api/traffic_patterns', methods=['POST'])
 @login_required
 def api_traffic_patterns():
-    """실시간 트래픽 패턴 분석 API (서브넷 그룹핑 옵션 지원)"""
+    """실시간 트래픽 패턴 분석 API (서브넷 그룹핑 옵션 지원) - 원본 파일 없어도 동작"""
     try:
         timestamp = request.form.get('timestamp')
         subnet_grouping = request.form.get('subnet_grouping', '/32')
@@ -966,64 +984,160 @@ def api_traffic_patterns():
         
         # 로그 파일 경로 확인
         log_files = analysis_result.get('log_files', [])
-        if not log_files:
-            return jsonify({'error': '원본 로그 파일 정보가 없습니다'}), 400
+        source_type = analysis_result.get('source', 'upload')
         
-        # 로그 파일 존재 확인
-        existing_files = [f for f in log_files if os.path.exists(f)]
-        if not existing_files:
-            return jsonify({'error': '원본 로그 파일을 찾을 수 없습니다'}), 400
+        # 원본 로그 파일 존재 확인
+        existing_files = [f for f in log_files if os.path.exists(f)] if log_files else []
         
-        # 기존 필터 설정 가져오기
-        filters = analysis_result.get('filters', {})
+        # 원본 파일이 있는 경우 - 새로운 분석 수행
+        if existing_files:
+            logger.info(f"원본 로그 파일로 새로운 트래픽 패턴 분석 수행: {len(existing_files)}개 파일")
+            return _analyze_with_original_files(existing_files, analysis_result, subnet_grouping, top_n)
         
-        # 로그 재파싱
-        parser = LogParser(log_files=existing_files)
-        log_df = parser.process_logs()
-        
-        if log_df.empty:
-            return jsonify({'error': '유효한 로그 데이터가 없습니다'}), 400
-        
-        # 필터 적용
-        filtered_df = apply_filters(log_df, filters)
-        
-        if filtered_df.empty:
-            return jsonify({'error': '필터링 후 남은 데이터가 없습니다'}), 400
-        
-        # 기존 분석 파라미터 사용
-        params = analysis_result.get('params', {
-            'min_occurrences': 1,
-            'eps': 0.5,
-            'min_samples': 2,
-            'max_data_points': 10000
-        })
-        
-        # 트래픽 분석기 생성
-        analyzer = TrafficAnalyzer(filtered_df, **params)
-        analyzer.cluster_traffic_patterns()
-        
-        # 새로운 서브넷 그룹핑으로 상위 트래픽 분석
-        top_traffic_df = analyzer.analyze_top_traffic_patterns(
-            top_n=top_n, 
-            subnet_grouping=subnet_grouping
-        )
-        
-        if top_traffic_df is None or top_traffic_df.empty:
-            return jsonify({'traffic_patterns': [], 'subnet_grouping': subnet_grouping})
-        
-        # 결과를 딕셔너리로 변환
-        traffic_patterns = top_traffic_df.to_dict('records')
-        
-        return jsonify({
-            'success': True,
-            'traffic_patterns': traffic_patterns,
-            'subnet_grouping': subnet_grouping,
-            'total_patterns': len(traffic_patterns)
-        })
-        
+        # 원본 파일이 없는 경우 - 기존 분석 결과 사용
+        else:
+            logger.info(f"원본 로그 파일이 없어 기존 분석 결과 사용 (source: {source_type})")
+            return _use_existing_analysis_result(analysis_result, subnet_grouping, top_n, timestamp)
+            
     except Exception as e:
         logger.error(f"트래픽 패턴 분석 API 오류: {e}", exc_info=True)
         return jsonify({'error': f'분석 중 오류가 발생했습니다: {str(e)}'}), 500
+
+def _analyze_with_original_files(existing_files, analysis_result, subnet_grouping, top_n):
+    """원본 파일이 있는 경우의 분석 로직"""
+    # 기존 필터 설정 가져오기
+    filters = analysis_result.get('filters', {})
+    
+    # 로그 재파싱
+    parser = LogParser(log_files=existing_files)
+    log_df = parser.process_logs()
+    
+    if log_df.empty:
+        return jsonify({'error': '유효한 로그 데이터가 없습니다'}), 400
+    
+    # 필터 적용
+    filtered_df = apply_filters(log_df, filters)
+    
+    if filtered_df.empty:
+        return jsonify({'error': '필터링 후 남은 데이터가 없습니다'}), 400
+    
+    # 기존 분석 파라미터 사용
+    params = analysis_result.get('params', {
+        'min_occurrences': 1,
+        'eps': 0.5,
+        'min_samples': 2,
+        'max_data_points': 10000
+    })
+    
+    # 트래픽 분석기 생성
+    analyzer = TrafficAnalyzer(filtered_df, **params)
+    analyzer.cluster_traffic_patterns()
+    
+    # 새로운 서브넷 그룹핑으로 상위 트래픽 분석
+    top_traffic_df = analyzer.analyze_top_traffic_patterns(
+        top_n=top_n, 
+        subnet_grouping=subnet_grouping
+    )
+    
+    if top_traffic_df is None or top_traffic_df.empty:
+        return jsonify({'traffic_patterns': [], 'subnet_grouping': subnet_grouping})
+    
+    # 결과를 딕셔너리로 변환
+    traffic_patterns = top_traffic_df.to_dict('records')
+    
+    return jsonify({
+        'success': True,
+        'traffic_patterns': traffic_patterns,
+        'subnet_grouping': subnet_grouping,
+        'total_patterns': len(traffic_patterns),
+        'data_source': 'realtime_analysis'
+    })
+
+def _use_existing_analysis_result(analysis_result, subnet_grouping, top_n, timestamp):
+    """기존 분석 결과를 사용하는 경우의 로직"""
+    
+    # 기존 top_traffic 데이터 가져오기
+    existing_traffic = analysis_result.get('top_traffic', [])
+    
+    if not existing_traffic:
+        return jsonify({
+            'success': True,
+            'traffic_patterns': [],
+            'subnet_grouping': subnet_grouping,
+            'total_patterns': 0,
+            'data_source': 'stored_analysis',
+            'message': '저장된 트래픽 패턴 데이터가 없습니다.'
+        })
+    
+    # 서브넷 그룹핑이 '/32'가 아닌 경우 데이터 변환
+    processed_patterns = []
+    
+    for pattern in existing_traffic[:top_n]:  # top_n 개수만큼 제한
+        processed_pattern = pattern.copy()
+        
+        # 서브넷 그룹핑 처리
+        if subnet_grouping != '/32':
+            src_ip = pattern.get('src_subnet', pattern.get('source_ip', ''))
+            if src_ip:
+                try:
+                    # IP 주소를 해당 서브넷으로 변환
+                    processed_pattern['src_subnet'] = _apply_subnet_grouping_to_ip(src_ip, subnet_grouping)
+                    processed_pattern['subnet_info'] = f"{processed_pattern['src_subnet']} (그룹핑: {subnet_grouping})"
+                except:
+                    processed_pattern['src_subnet'] = src_ip
+                    processed_pattern['subnet_info'] = f"{src_ip} (변환 실패)"
+        
+        # GeoIP 정보가 없는 경우 기본값 설정
+        if 'src_geo_info' not in processed_pattern:
+            processed_pattern['src_geo_info'] = 'Unknown / Unknown / Unknown'
+        if 'dst_geo_info' not in processed_pattern:
+            processed_pattern['dst_geo_info'] = 'Unknown / Unknown / Unknown'
+        
+        # 포트 정보 생성
+        if 'port_info' not in processed_pattern:
+            port = processed_pattern.get('destination_port', 'Unknown')
+            protocol = processed_pattern.get('protocol', 'Unknown')
+            processed_pattern['port_info'] = f"{port}({protocol})"
+        
+        # 소스 IP 수 기본값
+        if 'src_ip_count' not in processed_pattern:
+            processed_pattern['src_ip_count'] = 1
+        
+        processed_patterns.append(processed_pattern)
+    
+    return jsonify({
+        'success': True,
+        'traffic_patterns': processed_patterns,
+        'subnet_grouping': subnet_grouping,
+        'total_patterns': len(processed_patterns),
+        'data_source': 'stored_analysis',
+        'message': f'원본 로그 파일을 찾을 수 없어 저장된 분석 결과를 표시합니다. (분석 시점: {timestamp})'
+    })
+
+def _apply_subnet_grouping_to_ip(ip_str, subnet_grouping):
+    """IP 주소에 서브넷 그룹핑 적용"""
+    try:
+        # 기존 서브넷 표기 제거
+        if '/' in ip_str:
+            ip_str = ip_str.split('/')[0]
+        
+        # IPv6 처리
+        if ':' in ip_str:
+            if subnet_grouping == '/24':
+                subnet_grouping = '/64'  # IPv6에서는 /64 사용
+            elif subnet_grouping == '/16':
+                subnet_grouping = '/48'  # IPv6에서는 /48 사용
+            
+            import ipaddress
+            network = ipaddress.IPv6Network(f"{ip_str}{subnet_grouping}", strict=False)
+        else:
+            # IPv4 처리
+            import ipaddress
+            network = ipaddress.IPv4Network(f"{ip_str}{subnet_grouping}", strict=False)
+        
+        return str(network)
+    except:
+        return ip_str  # 변환 실패 시 원본 반환
 
 #----- 유틸리티 함수 -----#
 

@@ -343,6 +343,17 @@
     .spinner-border-sm {
         color: #0dcaf0;
     }
+
+    .data-source-alert {
+        background-color: #0c4a6e;
+        border-color: #0c4a6e;
+        color: #bae6fd;
+        margin: 10px 0;
+    }
+    
+    .data-source-alert .bi {
+        color: #38bdf8;
+    }
 </style>
 {% endblock %}
 
@@ -955,6 +966,13 @@ function loadTrafficPatterns(timestamp, subnetGrouping, topN) {
         success: function(response) {
             if (response.success && response.traffic_patterns) {
                 displayTrafficPatterns(response.traffic_patterns, subnetGrouping);
+                
+                // 데이터 소스에 따른 안내 메시지 표시
+                if (response.data_source === 'stored_analysis') {
+                    showDataSourceInfo(response.message || '저장된 분석 결과를 표시합니다.');
+                } else if (response.data_source === 'realtime_analysis') {
+                    showDataSourceInfo('실시간 분석 결과입니다.');
+                }
             } else {
                 showError('트래픽 패턴 데이터를 로드할 수 없습니다.');
             }
@@ -970,6 +988,22 @@ function loadTrafficPatterns(timestamp, subnetGrouping, topN) {
             $('#patternsLoading').addClass('d-none');
         }
     });
+}
+
+function showDataSourceInfo(message) {
+    // 기존 알림 제거
+    $('.data-source-alert').remove();
+    
+    // 새 알림 표시
+    var alertHtml = '<div class="alert alert-info data-source-alert" role="alert">' +
+                    '<i class="bi bi-info-circle me-2"></i>' + message +
+                    '</div>';
+    $('.card-header').after(alertHtml);
+    
+    // 5초 후 자동 제거
+    setTimeout(function() {
+        $('.data-source-alert').fadeOut();
+    }, 5000);
 }
 
 function displayTrafficPatterns(patterns, subnetGrouping) {
