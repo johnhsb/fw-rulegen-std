@@ -22,6 +22,7 @@ users.json
 static/output
 
 # 임시 파일
+logs/
 *.log
 policy_recommendations/
 __pycache__/

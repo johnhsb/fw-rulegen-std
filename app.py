@@ -378,6 +378,14 @@ def index():
     # 로그 파일 목록 가져오기
     manual_logs = get_logs_list('upload')
     syslog_logs = get_logs_list('syslog')
+
+    # 실시간 상태 정보 추가
+    status_info = {
+        'manual_count': len(manual_analyses),
+        'syslog_count': len(syslog_analyses),
+        'manual_active': global_state['analyzer'] is not None,
+        'syslog_active': global_state['is_syslog_running']
+    }
     
     return render_template('index.html',
                           is_analyzed=global_state['analyzer'] is not None,
@@ -385,6 +393,7 @@ def index():
                           manual_analyses=manual_analyses,
                           syslog_analyses=syslog_analyses,
                           manual_logs=manual_logs,
+                          status_info=status_info,
                           syslog_logs=syslog_logs)
 
 @app.route('/login', methods=['GET', 'POST'])

@@ -210,6 +210,85 @@
             font-size: 1rem;
         }
     }
+
+        /* === 개선된 탭 네비게이션 스타일 === */
+    .nav-tabs-enhanced {
+        border-bottom: 2px solid #30363d;
+        background: linear-gradient(90deg, #161b22 0%, #21262d 100%);
+        border-radius: 12px 12px 0 0;
+        overflow: hidden;
+    }
+
+    .nav-tabs-enhanced .nav-link {
+        border: none;
+        padding: 1.2rem 2rem;
+        color: #7d8590;
+        transition: all 0.3s ease;
+        position: relative;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-size: 0.9rem;
+    }
+
+    /* 수동업로드 탭 스타일 */
+    .nav-tabs-enhanced .nav-link.manual-tab:hover {
+        background: linear-gradient(135deg, rgba(13,110,253,0.15), rgba(13,110,253,0.05));
+        color: #58a6ff;
+        border-left: 4px solid #0d6efd;
+    }
+
+    .nav-tabs-enhanced .nav-link.manual-tab.active {
+        background: linear-gradient(135deg, rgba(13,110,253,0.2), rgba(13,110,253,0.1));
+        color: #58a6ff;
+        border-left: 4px solid #0d6efd;
+        box-shadow: inset 0 -2px 0 #0d6efd;
+    }
+
+    /* Syslog 탭 스타일 */
+    .nav-tabs-enhanced .nav-link.syslog-tab:hover {
+        background: linear-gradient(135deg, rgba(25,135,84,0.15), rgba(25,135,84,0.05));
+        color: #56d364;
+        border-right: 4px solid #198754;
+    }
+
+    .nav-tabs-enhanced .nav-link.syslog-tab.active {
+        background: linear-gradient(135deg, rgba(25,135,84,0.2), rgba(25,135,84,0.1));
+        color: #56d364;
+        border-right: 4px solid #198754;
+        box-shadow: inset 0 -2px 0 #198754;
+    }
+
+    /* 배지 스타일 */
+    .status-badge {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 10px;
+        font-weight: 600;
+        margin-left: 0.5rem;
+    }
+
+    .manual-badge {
+        background: linear-gradient(45deg, #0d6efd, #6f42c1);
+        color: white;
+    }
+
+    .syslog-badge {
+        background: linear-gradient(45deg, #198754, #20c997);
+        color: white;
+    }
+
+    /* 탭 콘텐츠 개선 */
+    .manual-content {
+        background: linear-gradient(135deg, rgba(13,110,253,0.03), rgba(13,110,253,0.01));
+        border-left: 3px solid #0d6efd;
+    }
+
+    .syslog-content {
+        background: linear-gradient(135deg, rgba(25,135,84,0.03), rgba(25,135,84,0.01));
+        border-left: 3px solid #198754;
+    }
+
 </style>
 {% endblock %}
 
@@ -222,16 +301,22 @@
                 <h5 class="mb-0">트래픽 분석 결과</h5>
             </div>
             <div class="card-body p-0">
-                <ul class="nav nav-tabs nav-justified" id="analysisTabs" role="tablist">
+                <ul class="nav nav-tabs nav-tabs-enhanced" id="analysisTabs" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="manual-tab" data-bs-toggle="tab" data-bs-target="#manual" type="button" role="tab"><i class="bi bi-cloud-upload me-1"></i>수동 업로드</button>
+                        <button class="nav-link manual-tab active" id="manual-tab" data-bs-toggle="tab" data-bs-target="#manual" type="button" role="tab">
+                            <i class="bi bi-cloud-upload me-1"></i>수동 업로드
+                            <span class="status-badge manual-badge">{{ manual_analyses|length }}</span>
+                        </button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="syslog-tab" data-bs-toggle="tab" data-bs-target="#syslog" type="button" role="tab"><i class="bi bi-hdd-network me-1"></i>Syslog</button>
+                        <button class="nav-link syslog-tab" id="syslog-tab" data-bs-toggle="tab" data-bs-target="#syslog" type="button" role="tab">
+                            <i class="bi bi-hdd-network me-1"></i>Syslog 수집
+                            <span class="status-badge syslog-badge">{{ syslog_analyses|length }}</span>
+                        </button>
                     </li>
                 </ul>
                 <div class="tab-content p-3" id="analysisTabsContent">
-                    <div class="tab-pane fade show active" id="manual" role="tabpanel">
+                    <div class="tab-pane fade show active manual-content" id="manual" role="tabpanel">
                         {% if manual_analyses %}
                         <div class="table-container">
                             <table class="table table-dark table-striped table-hover mb-0">
@@ -313,7 +398,7 @@
                         <div class="alert alert-info mb-0">아직 수동 분석 결과가 없습니다.</div>
                         {% endif %}
                     </div>
-                    <div class="tab-pane fade" id="syslog" role="tabpanel">
+                    <div class="tab-pane fade syslog-content" id="syslog" role="tabpanel">
                         {% if syslog_analyses %}
                         <div class="table-container">
                             <table class="table table-dark table-striped table-hover mb-0">
