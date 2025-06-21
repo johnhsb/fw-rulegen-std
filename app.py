@@ -8,6 +8,9 @@ ML기반 방화벽 정책 추천 시스템 - 메인 애플리케이션
 """
 
 import os
+import psutil
+import time
+import threading
 import sys
 import logging
 import json
@@ -20,6 +23,8 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, s
 from flask_session import Session
 from gevent.pywsgi import WSGIServer
 import ssl
+from collections import OrderedDict
+from functools import wraps
 
 # 모듈 임포트
 from modules.auth import load_user_config, hash_password, login_required
@@ -53,6 +58,7 @@ global_state = {
     'config': [],            # 생성된 주니퍼 설정
     'syslog_server': None,   # Syslog 서버 인스턴스
     'is_syslog_running': False,  # Syslog 서버 실행 상태
+    'traffic_cache': None,   # 캐시 인스턴스 추가
     'syslog_config': {       # Syslog 서버 설정
         'host': '0.0.0.0',
         'port': 514,
@@ -67,6 +73,11 @@ global_state = {
         'eps': 0.5,
         'min_samples': 2,
         'max_data_points': 10000
+    },
+    'active_sessions': set(),
+    'cache_stats': {
+        'last_analysis_time': None,
+        'last_update_time': None
     }
 }
 
@@ -91,6 +102,268 @@ if 'output_dir' in saved_settings:
 
 # 사용자 목록 로드
 users = load_user_config(Config.USERS_CONFIG)
+
+# ==================== 캐싱 시스템 클래스 ====================
+
+class TrafficPatternsCache:
+    """트래픽 패턴 분석 결과 캐시 관리 클래스"""
+    
+    def __init__(self, max_size=100, ttl=3600):
+        """
+        캐시 초기화
+        
+        Args:
+            max_size (int): 최대 캐시 항목 수
+            ttl (int): 캐시 유효 시간 (초)
+        """
+        self.max_size = max_size
+        self.ttl = ttl
+        self.cache = OrderedDict()  # LRU 캐시를 위한 OrderedDict
+        self.timestamps = {}  # 캐시 생성 시간 저장
+        self.access_count = {}  # 캐시 접근 횟수
+        self.lock = threading.RLock()  # 스레드 안전성을 위한 락
+        
+        # 통계 정보
+        self.stats = {
+            'hits': 0,
+            'misses': 0,
+            'evictions': 0,
+            'expired': 0
+        }
+        
+        logger.info(f"트래픽 패턴 캐시 초기화: max_size={max_size}, ttl={ttl}s")
+    
+    def _generate_cache_key(self, timestamp, subnet_grouping, top_n, filters_hash=None):
+        """
+        캐시 키 생성
+        
+        Args:
+            timestamp (str): 분석 결과 타임스탬프
+            subnet_grouping (str): 서브넷 그룹핑 옵션
+            top_n (int): 상위 N개 결과
+            filters_hash (str): 필터 해시값
+            
+        Returns:
+            str: 캐시 키
+        """
+        if filters_hash is None:
+            filters_hash = "no_filters"
+        
+        key_parts = [timestamp, subnet_grouping, str(top_n), filters_hash]
+        cache_key = "_".join(key_parts)
+        
+        # 키 길이 제한 (해시 사용)
+        if len(cache_key) > 100:
+            cache_key = hashlib.sha256(cache_key.encode()).hexdigest()[:32]
+        
+        return cache_key
+    
+    def _is_expired(self, cache_key):
+        """캐시 만료 여부 확인"""
+        if cache_key not in self.timestamps:
+            return True
+        
+        return (time.time() - self.timestamps[cache_key]) > self.ttl
+    
+    def _evict_expired(self):
+        """만료된 캐시 항목 제거"""
+        current_time = time.time()
+        expired_keys = []
+        
+        for key, timestamp in self.timestamps.items():
+            if (current_time - timestamp) > self.ttl:
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            self._remove_key(key)
+            self.stats['expired'] += 1
+            logger.debug(f"만료된 캐시 제거: {key}")
+    
+    def _evict_lru(self):
+        """LRU 정책에 따라 캐시 항목 제거"""
+        if len(self.cache) >= self.max_size:
+            # 가장 오래된 항목 제거
+            oldest_key = next(iter(self.cache))
+            self._remove_key(oldest_key)
+            self.stats['evictions'] += 1
+            logger.debug(f"LRU 캐시 제거: {oldest_key}")
+    
+    def _remove_key(self, key):
+        """캐시에서 키 제거"""
+        self.cache.pop(key, None)
+        self.timestamps.pop(key, None)
+        self.access_count.pop(key, None)
+    
+    def get(self, timestamp, subnet_grouping, top_n, filters_hash=None):
+        """
+        캐시에서 데이터 조회
+        
+        Returns:
+            dict or None: 캐시된 데이터 또는 None
+        """
+        cache_key = self._generate_cache_key(timestamp, subnet_grouping, top_n, filters_hash)
+        
+        with self.lock:
+            # 만료된 캐시 정리
+            self._evict_expired()
+            
+            if cache_key in self.cache and not self._is_expired(cache_key):
+                # 캐시 히트 - LRU 업데이트
+                value = self.cache.pop(cache_key)
+                self.cache[cache_key] = value  # 최신으로 이동
+                self.access_count[cache_key] = self.access_count.get(cache_key, 0) + 1
+                
+                self.stats['hits'] += 1
+                logger.info(f"캐시 히트: {cache_key} (접근 횟수: {self.access_count[cache_key]})")
+                return value
+            else:
+                self.stats['misses'] += 1
+                logger.debug(f"캐시 미스: {cache_key}")
+                return None
+    
+    def put(self, timestamp, subnet_grouping, top_n, data, filters_hash=None):
+        """
+        캐시에 데이터 저장
+        
+        Args:
+            data (dict): 저장할 데이터
+        """
+        cache_key = self._generate_cache_key(timestamp, subnet_grouping, top_n, filters_hash)
+        
+        with self.lock:
+            # 공간 확보
+            self._evict_expired()
+            self._evict_lru()
+            
+            # 데이터 저장
+            self.cache[cache_key] = data.copy()  # 깊은 복사로 안전성 확보
+            self.timestamps[cache_key] = time.time()
+            self.access_count[cache_key] = 0
+            
+            logger.info(f"캐시 저장: {cache_key} (크기: {len(self.cache)}/{self.max_size})")
+    
+    def invalidate(self, pattern=None, timestamp=None):
+        """
+        캐시 무효화
+        
+        Args:
+            pattern (str): 무효화할 키 패턴
+            timestamp (str): 특정 타임스탬프의 모든 캐시 무효화
+        """
+        with self.lock:
+            keys_to_remove = []
+            
+            if timestamp:
+                # 특정 타임스탬프의 모든 캐시 무효화
+                for key in self.cache.keys():
+                    if key.startswith(timestamp):
+                        keys_to_remove.append(key)
+            elif pattern:
+                # 패턴 매칭
+                for key in self.cache.keys():
+                    if pattern in key:
+                        keys_to_remove.append(key)
+            else:
+                # 전체 캐시 클리어
+                keys_to_remove = list(self.cache.keys())
+            
+            for key in keys_to_remove:
+                self._remove_key(key)
+            
+            logger.info(f"캐시 무효화: {len(keys_to_remove)}개 항목 제거")
+    
+    def get_stats(self):
+        """캐시 통계 정보 반환"""
+        with self.lock:
+            total_requests = self.stats['hits'] + self.stats['misses']
+            hit_rate = (self.stats['hits'] / total_requests * 100) if total_requests > 0 else 0
+            
+            return {
+                'cache_size': len(self.cache),
+                'max_size': self.max_size,
+                'hit_rate': round(hit_rate, 2),
+                'total_hits': self.stats['hits'],
+                'total_misses': self.stats['misses'],
+                'evictions': self.stats['evictions'],
+                'expired': self.stats['expired'],
+                'memory_usage': self._estimate_memory_usage()
+            }
+    
+    def _estimate_memory_usage(self):
+        """메모리 사용량 추정 (대략적)"""
+        import sys
+        total_size = 0
+        
+        for key, value in self.cache.items():
+            total_size += sys.getsizeof(key)
+            total_size += sys.getsizeof(str(value))  # 대략적 계산
+        
+        return f"{total_size / 1024:.1f} KB"
+
+# ==================== 전역 캐시 인스턴스 ====================
+
+# 캐시 인스턴스 생성 (메모리 사용량 고려하여 적절한 크기 설정)
+traffic_patterns_cache = TrafficPatternsCache(
+    max_size=30,    # 최대 30개 캐시 항목
+    ttl=1800        # 30분 TTL
+)
+
+# ==================== 캐시 데코레이터 ====================
+
+def cache_traffic_patterns(func):
+    """트래픽 패턴 API에 대한 캐싱 데코레이터"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # 요청에서 캐시 키 생성을 위한 파라미터 추출
+        timestamp = request.form.get('timestamp')
+        subnet_grouping = request.form.get('subnet_grouping', '/32')
+        top_n = int(request.form.get('top_n', 100))
+        
+        # 필터 해시 생성 (캐시 키의 일부)
+        filters = {
+            'device_filter': request.form.get('device_filter', ''),
+            'ip_filter': request.form.get('ip_filter', ''),
+            'port_filter': request.form.get('port_filter', '')
+        }
+        filters_hash = hashlib.md5(str(sorted(filters.items())).encode()).hexdigest()[:8]
+        
+        # 캐시에서 조회
+        cached_result = traffic_patterns_cache.get(timestamp, subnet_grouping, top_n, filters_hash)
+        
+        if cached_result is not None:
+            # 캐시 히트
+            cached_result['data_source'] = 'cache'
+            cached_result['cache_info'] = {
+                'hit': True,
+                'timestamp': time.strftime('%H:%M:%S')
+            }
+            return jsonify(cached_result)
+        
+        # 캐시 미스 - 원본 함수 실행
+        try:
+            result = func(*args, **kwargs)
+            
+            # 성공적인 결과인 경우 캐시에 저장
+            if hasattr(result, 'get_json') and result.get_json():
+                result_data = result.get_json()
+                if result_data.get('success'):
+                    # 캐시 메타데이터 추가
+                    result_data['cache_info'] = {
+                        'hit': False,
+                        'timestamp': time.strftime('%H:%M:%S'),
+                        'cached': True
+                    }
+                    
+                    # 캐시에 저장
+                    traffic_patterns_cache.put(timestamp, subnet_grouping, top_n, result_data, filters_hash)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"캐시된 함수 실행 오류: {e}")
+            raise
+    
+    return wrapper
 
 #----- 라우트 정의 -----#
 
@@ -350,6 +623,8 @@ def api_analyze_logs():
         global_state['log_df'] = filtered_df
         global_state['policies'] = policies
         global_state['config'] = config
+        # 캐시 통계 업데이트 추가
+        global_state['cache_stats']['last_analysis_time'] = datetime.now().isoformat()
 
         return jsonify({
             'success': True,
@@ -611,29 +886,121 @@ def settings():
                           output_dir=Config.OUTPUT_DIR,
                           syslog_config=global_state['syslog_config'])
 
+# 세션 추적을 위한 미들웨어 추가
+@app.before_request
+def track_sessions():
+    """활성 세션 추적"""
+    if 'logged_in' in session and session['logged_in']:
+        session_id = session.get('session_id')
+        if not session_id:
+            import hashlib
+            import time
+            session_id = hashlib.md5(f"{request.remote_addr}_{time.time()}".encode()).hexdigest()
+            session['session_id'] = session_id
+        
+        global_state['active_sessions'].add(session_id)
+        
+        # 세션 정리 (100개 초과시)
+        if len(global_state['active_sessions']) > 100:
+            global_state['active_sessions'] = {session_id}
+
 @app.route('/api/system_info')
 @login_required
 def api_system_info():
-    """시스템 정보 반환"""
-    import psutil
+    """확장된 시스템 정보 반환"""
     
     try:
+        # === 시스템 리소스 정보 ===
+        # CPU 사용률
+        cpu_percent = psutil.cpu_percent(interval=0.1)  # 빠른 응답을 위해 0.1초
+        
+        # 메모리 정보
+        memory = psutil.virtual_memory()
+        memory_percent = memory.percent
+        memory_used_gb = memory.used / (1024**3)
+        memory_total_gb = memory.total / (1024**3)
+        memory_usage_str = f"{memory_used_gb:.1f}GB / {memory_total_gb:.1f}GB ({memory_percent}%)"
+        
         # 디스크 사용량
         disk_usage = psutil.disk_usage(Config.BASE_DIR)
-        disk_usage_str = f"{disk_usage.used / (1024**3):.1f}GB / {disk_usage.total / (1024**3):.1f}GB ({disk_usage.percent}%)"
+        disk_percent = disk_usage.percent
+        disk_used_gb = disk_usage.used / (1024**3)
+        disk_total_gb = disk_usage.total / (1024**3)
+        disk_usage_str = f"{disk_used_gb:.1f}GB / {disk_total_gb:.1f}GB ({disk_percent}%)"
         
-        # 메모리 사용량
-        memory = psutil.virtual_memory()
-        memory_usage_str = f"{memory.used / (1024**3):.1f}GB / {memory.total / (1024**3):.1f}GB ({memory.percent}%)"
+        # 현재 프로세스 메모리 사용량
+        current_process = psutil.Process()
+        process_memory_mb = current_process.memory_info().rss / (1024**2)
         
-        return jsonify({
+        # === 애플리케이션 상태 정보 ===
+        # 활성 세션 수
+        active_sessions_count = len(global_state.get('active_sessions', set()))
+        
+        # 분석 결과 수
+        manual_analyses_count = len(get_analyses_list('upload'))
+        syslog_analyses_count = len(get_analyses_list('syslog'))
+        total_analyses_count = manual_analyses_count + syslog_analyses_count
+        
+        # 로그 파일 수
+        manual_logs_count = len(get_logs_list('upload'))
+        syslog_logs_count = len(get_logs_list('syslog'))
+        total_logs_count = manual_logs_count + syslog_logs_count
+        
+        # === 캐시 상태 정보 ===
+        cache_info = {
+            'analyzer_loaded': global_state['analyzer'] is not None,
+            'log_data_loaded': global_state['log_df'] is not None,
+            'log_data_size': len(global_state['log_df']) if global_state['log_df'] is not None else 0,
+            'policies_cached': len(global_state['policies']),
+            'config_cached': len(global_state['config']) > 0,
+            'last_analysis_time': global_state['cache_stats'].get('last_analysis_time')
+        }
+        
+        # === 응답 데이터 구성 ===
+        response_data = {
             'success': True,
+            'timestamp': datetime.now().isoformat(),
+            
+            # 기존 호환성 유지 (settings.html에서 사용)
             'disk_usage': disk_usage_str,
-            'memory_usage': memory_usage_str
-        })
+            'memory_usage': memory_usage_str,
+            
+            # 확장된 시스템 정보
+            'system': {
+                'cpu_percent': round(cpu_percent, 1),
+                'memory_percent': round(memory_percent, 1),
+                'memory_used_gb': round(memory_used_gb, 2),
+                'memory_total_gb': round(memory_total_gb, 2),
+                'disk_percent': round(disk_percent, 1),
+                'disk_used_gb': round(disk_used_gb, 2),
+                'disk_total_gb': round(disk_total_gb, 2),
+                'process_memory_mb': round(process_memory_mb, 1)
+            },
+            
+            # 애플리케이션 상태
+            'application': {
+                'active_sessions': active_sessions_count,
+                'syslog_running': global_state['is_syslog_running'],
+                'manual_analyses': manual_analyses_count,
+                'syslog_analyses': syslog_analyses_count,
+                'total_analyses': total_analyses_count,
+                'manual_logs': manual_logs_count,
+                'syslog_logs': syslog_logs_count,
+                'total_logs': total_logs_count
+            },
+            
+            # 캐시 상태
+            'cache': cache_info
+        }
+        
+        # 캐시 통계 업데이트
+        global_state['cache_stats']['last_update_time'] = datetime.now().isoformat()
+        
+        return jsonify(response_data)
+        
     except Exception as e:
         logger.error(f"시스템 정보 조회 오류: {e}")
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/cleanup', methods=['POST'])
 @login_required
@@ -1006,8 +1373,9 @@ def serve_visualization(filename):
 
 @app.route('/api/traffic_patterns', methods=['POST'])
 @login_required
+@cache_traffic_patterns  # 캐싱 데코레이터 적용
 def api_traffic_patterns():
-    """실시간 트래픽 패턴 분석 API (서브넷 그룹핑 옵션 지원) - 원본 파일 없어도 동작"""
+    """실시간 트래픽 패턴 분석 API (캐싱 적용)"""
     try:
         timestamp = request.form.get('timestamp')
         subnet_grouping = request.form.get('subnet_grouping', '/32')
@@ -1041,6 +1409,88 @@ def api_traffic_patterns():
     except Exception as e:
         logger.error(f"트래픽 패턴 분석 API 오류: {e}", exc_info=True)
         return jsonify({'error': f'분석 중 오류가 발생했습니다: {str(e)}'}), 500
+
+# ==================== 캐시 관리 API ====================
+
+@app.route('/api/cache/stats')
+@login_required
+def api_cache_stats():
+    """캐시 통계 정보 API"""
+    try:
+        stats = traffic_patterns_cache.get_stats()
+        return jsonify({
+            'success': True,
+            'cache_stats': stats
+        })
+    except Exception as e:
+        logger.error(f"캐시 통계 조회 오류: {e}")
+        return jsonify({'error': '캐시 통계를 가져올 수 없습니다'}), 500
+
+@app.route('/api/cache/clear', methods=['POST'])
+@login_required
+def api_cache_clear():
+    """캐시 클리어 API"""
+    try:
+        clear_type = request.form.get('type', 'all')
+        timestamp = request.form.get('timestamp', '')
+        
+        if clear_type == 'timestamp' and timestamp:
+            traffic_patterns_cache.invalidate(timestamp=timestamp)
+            message = f"타임스탬프 {timestamp}의 캐시가 클리어되었습니다."
+        else:
+            traffic_patterns_cache.invalidate()
+            message = "모든 캐시가 클리어되었습니다."
+        
+        return jsonify({
+            'success': True,
+            'message': message
+        })
+    except Exception as e:
+        logger.error(f"캐시 클리어 오류: {e}")
+        return jsonify({'error': '캐시 클리어 중 오류가 발생했습니다'}), 500
+
+# ==================== 주기적 캐시 정리 ====================
+
+def start_cache_cleanup_scheduler():
+    """캐시 정리 스케줄러 시작"""
+    import threading
+    import time
+    
+    def cleanup_routine():
+        while True:
+            try:
+                # 5분마다 만료된 캐시 정리
+                time.sleep(300)
+                
+                with traffic_patterns_cache.lock:
+                    traffic_patterns_cache._evict_expired()
+                
+                # 캐시 통계 로깅 (1시간마다)
+                stats = traffic_patterns_cache.get_stats()
+                if stats['total_hits'] + stats['total_misses'] > 0:
+                    logger.info(f"캐시 통계: 히트율 {stats['hit_rate']}%, "
+                              f"크기 {stats['cache_size']}/{stats['max_size']}, "
+                              f"메모리 {stats['memory_usage']}")
+                
+            except Exception as e:
+                logger.error(f"캐시 정리 루틴 오류: {e}")
+    
+    cleanup_thread = threading.Thread(target=cleanup_routine, daemon=True)
+    cleanup_thread.start()
+    logger.info("캐시 정리 스케줄러 시작됨")
+
+# ==================== 애플리케이션 시작 시 초기화 ====================
+
+def initialize_caching():
+    """캐싱 시스템 초기화"""
+    try:
+        # 캐시 정리 스케줄러 시작
+        start_cache_cleanup_scheduler()
+        
+        logger.info("트래픽 패턴 캐싱 시스템 초기화 완료")
+        
+    except Exception as e:
+        logger.error(f"캐싱 시스템 초기화 오류: {e}")
 
 def _analyze_with_original_files(existing_files, analysis_result, subnet_grouping, top_n):
     """원본 파일이 있는 경우의 분석 로직"""
@@ -1605,7 +2055,6 @@ def get_logs_list(source_type):
 
 def start_syslog_server():
     """Syslog 서버 시작"""
-    import threading
     
     if global_state['is_syslog_running']:
         return
@@ -1671,6 +2120,9 @@ def main():
     parser.add_argument('--debug', action='store_true', help='디버그 모드 활성화')
     
     args = parser.parse_args()
+
+    # 캐싱 시스템 초기화
+    initialize_caching()
     
     # SSL 처리
     ssl_context = None

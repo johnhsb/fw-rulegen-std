@@ -120,6 +120,96 @@
     .table td {
         vertical-align: middle;
     }
+
+    /* 시스템 상태 카드 전용 스타일 */
+    .system-status-card .progress {
+        background-color: #2d2d2d;
+        border-radius: 3px;
+    }
+    
+    .system-status-card .progress-bar {
+        transition: width 0.8s ease-in-out;
+        border-radius: 3px;
+    }
+    
+    .system-status-card .badge {
+        font-size: 0.75rem;
+        min-width: 50px;
+        text-align: center;
+        font-weight: 500;
+    }
+    
+    .system-status-card .h6 {
+        color: #e0e0e0;
+        font-weight: 600;
+        margin-bottom: 0;
+        font-size: 1.1rem;
+    }
+    
+    /* 사용률에 따른 프로그레스 바 색상 */
+    .progress-bar.usage-low {
+        background-color: #198754 !important; /* 녹색 */
+    }
+    
+    .progress-bar.usage-medium {
+        background-color: #ffc107 !important; /* 노란색 */
+    }
+    
+    .progress-bar.usage-high {
+        background-color: #fd7e14 !important; /* 주황색 */
+    }
+    
+    .progress-bar.usage-critical {
+        background-color: #dc3545 !important; /* 빨간색 */
+    }
+    
+    /* 캐시 상태 배지 */
+    .cache-status .badge {
+        margin: 2px;
+        font-size: 0.7rem;
+        padding: 0.3em 0.6em;
+    }
+    
+    /* 실시간 업데이트 애니메이션 */
+    .updating {
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    
+    /* 상태 표시 애니메이션 */
+    .status-pulse {
+        animation: pulse-glow 2s ease-in-out infinite;
+    }
+    
+    @keyframes pulse-glow {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+    
+    /* 툴팁 개선 */
+    .system-status-card [title] {
+        cursor: help;
+    }
+    
+    /* 반응형 조정 */
+    @media (max-width: 768px) {
+        .system-status-card .col-4 {
+            margin-bottom: 0.5rem;
+        }
+        
+        .system-status-card .badge {
+            font-size: 0.7rem;
+            min-width: 40px;
+        }
+        
+        .system-status-card .h6 {
+            font-size: 1rem;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -345,25 +435,99 @@
 
 <div class="row">
     <div class="col-md-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">시스템 상태</h5>
+        <div class="card mb-4 system-status-card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-speedometer2 me-1"></i>시스템 상태</h5>
+                <button class="btn btn-sm btn-outline-primary" id="refreshSystemStatus" title="새로고침">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
             </div>
             <div class="card-body">
-                <div class="d-flex justify-content-between mb-3">
-                    <span><i class="bi bi-hdd-network me-1"></i>Syslog 서버:</span>
-                    <span class="badge {% if is_syslog_running %}bg-success{% else %}bg-secondary{% endif %}">
-                        {% if is_syslog_running %}<i class="bi bi-play-fill"></i>실행 중{% else %}중지됨{% endif %}
-                    </span>
+                <!-- 시스템 리소스 섹션 -->
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <small class="text-muted"><i class="bi bi-cpu me-1"></i>CPU</small>
+                            <span class="badge bg-primary" id="cpuUsage" title="CPU 사용률">--%</span>
+                        </div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar bg-primary" id="cpuProgress" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <small class="text-muted"><i class="bi bi-memory me-1"></i>메모리</small>
+                            <span class="badge bg-info" id="memoryUsage" title="메모리 사용률">--%</span>
+                        </div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar bg-info" id="memoryProgress" style="width: 0%"></div>
+                        </div>
+                    </div>
                 </div>
-                <div class="d-flex justify-content-around mt-4">
-                    <a href="/upload" class="btn btn-primary"><i class="bi bi-cloud-upload me-1"></i>로그 업로드</a>
-                    <a href="/syslog" class="btn btn-primary"><i class="bi bi-hdd-network me-1"></i>Syslog 관리</a>
+                
+                <!-- 서비스 및 세션 상태 -->
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span><i class="bi bi-hdd-network me-1"></i>Syslog 서버</span>
+                            <span class="badge {% if is_syslog_running %}bg-success{% else %}bg-secondary{% endif %}" id="syslogStatus">
+                                {% if is_syslog_running %}<i class="bi bi-play-fill"></i>실행 중{% else %}중지됨{% endif %}
+                            </span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-people me-1"></i>활성 세션</span>
+                            <span class="badge bg-warning text-dark" id="activeSessions" title="현재 로그인한 사용자 수">0</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 데이터 현황 섹션 -->
+                <div class="row mb-3">
+                    <div class="col-4">
+                        <div class="text-center">
+                            <div class="h6 mb-1 text-info" id="totalAnalyses" title="전체 분석 결과 수">0</div>
+                            <small class="text-muted">분석 결과</small>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-center">
+                            <div class="h6 mb-1 text-warning" id="totalLogs" title="전체 로그 파일 수">0</div>
+                            <small class="text-muted">로그 파일</small>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-center">
+                            <div class="h6 mb-1 text-success" id="cachedPolicies" title="메모리에 캐시된 정책 수">0</div>
+                            <small class="text-muted">캐시 정책</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 캐시 상태 섹션 -->
+                <div class="mb-3">
+                    <small class="text-muted d-block mb-2"><i class="bi bi-database me-1"></i>캐시 상태</small>
+                    <div class="d-flex flex-wrap gap-1">
+                        <span class="badge bg-secondary" id="analyzerCache" title="트래픽 분석기 상태">분석기: 대기중</span>
+                        <span class="badge bg-secondary" id="dataCache" title="메모리상 로그 데이터 수">데이터: 0개</span>
+                        <span class="badge bg-secondary" id="configCache" title="설정 캐시 상태">설정: 미캐시</span>
+                    </div>
+                    <div class="mt-1">
+                        <small class="text-muted" id="lastAnalysisTime">마지막 분석: -</small>
+                    </div>
+                </div>
+                
+                <!-- 액션 버튼 -->
+                <div class="d-flex justify-content-around">
+                    <a href="/upload" class="btn btn-primary btn-sm">
+                        <i class="bi bi-cloud-upload me-1"></i>로그 업로드
+                    </a>
+                    <a href="/syslog" class="btn btn-primary btn-sm">
+                        <i class="bi bi-hdd-network me-1"></i>Syslog 관리
+                    </a>
                 </div>
             </div>
         </div>
     </div>
-    
     <div class="col-md-6">
         <div class="card mb-4">
             <div class="card-header">
@@ -409,6 +573,17 @@ $(document).ready(function() {
     // 페이지네이션 초기화
     initPagination('manual');
     initPagination('syslog');
+
+    // 시스템 상태 초기 로드
+    updateSystemStatus();
+    
+    // 주기적으로 시스템 상태 업데이트 (30초마다)
+    setInterval(updateSystemStatus, 30000);
+    
+    // 새로고침 버튼 이벤트
+    $('#refreshSystemStatus').on('click', function() {
+        updateSystemStatus();
+    });
     
     // 탭 변경 시 해당 탭의 페이지네이션 업데이트
     $('#analysisTabs a[data-bs-toggle="tab"]').on('shown.bs.tab', function(e) {
@@ -517,5 +692,152 @@ $(document).ready(function() {
         $(`#${tabId}NextBtn`).toggleClass('disabled', page === totalPages);
     }
 });
+
+function updateSystemStatus() {
+    const $refreshBtn = $('#refreshSystemStatus');
+    $refreshBtn.addClass('updating');
+    
+    $.ajax({
+        url: '/api/system_info',
+        type: 'GET',
+        success: function(response) {
+            if (response.success) {
+                updateSystemUI(response);
+            } else {
+                console.error('시스템 상태 업데이트 실패:', response.error);
+            }
+        },
+        error: function(xhr) {
+            console.error('시스템 상태 업데이트 요청 실패:', xhr);
+        },
+        complete: function() {
+            $refreshBtn.removeClass('updating');
+        }
+    });
+}
+
+function updateSystemUI(data) {
+    // 확장된 데이터가 있는지 확인
+    if (!data.system || !data.application || !data.cache) {
+        console.warn('확장된 시스템 정보가 없습니다. 기본 정보만 표시합니다.');
+        return;
+    }
+    
+    const system = data.system;
+    const app = data.application;
+    const cache = data.cache;
+    
+    // === CPU 사용률 업데이트 ===
+    $('#cpuUsage').text(system.cpu_percent + '%');
+    $('#cpuProgress').css('width', system.cpu_percent + '%');
+    updateProgressBarColor('#cpuProgress', system.cpu_percent);
+    $('#cpuUsage').attr('title', `CPU: ${system.cpu_percent}% | 프로세스 메모리: ${system.process_memory_mb}MB`);
+    
+    // === 메모리 사용률 업데이트 ===
+    $('#memoryUsage').text(system.memory_percent + '%');
+    $('#memoryProgress').css('width', system.memory_percent + '%');
+    updateProgressBarColor('#memoryProgress', system.memory_percent);
+    $('#memoryUsage').attr('title', `메모리: ${system.memory_used_gb}GB / ${system.memory_total_gb}GB`);
+    
+    // === 서비스 상태 업데이트 ===
+    // Syslog 서버 상태
+    const $syslogBadge = $('#syslogStatus');
+    if (app.syslog_running) {
+        $syslogBadge.removeClass('bg-secondary').addClass('bg-success');
+        $syslogBadge.html('<i class="bi bi-play-fill"></i>실행 중');
+    } else {
+        $syslogBadge.removeClass('bg-success').addClass('bg-secondary');
+        $syslogBadge.html('중지됨');
+    }
+    
+    // 활성 세션 수
+    $('#activeSessions').text(app.active_sessions);
+    
+    // === 데이터 현황 업데이트 ===
+    $('#totalAnalyses').text(app.total_analyses);
+    $('#totalLogs').text(app.total_logs);
+    $('#cachedPolicies').text(cache.policies_cached);
+    
+    // 상세 툴팁 업데이트
+    $('#totalAnalyses').attr('title', `수동: ${app.manual_analyses}, Syslog: ${app.syslog_analyses}`);
+    $('#totalLogs').attr('title', `수동: ${app.manual_logs}, Syslog: ${app.syslog_logs}`);
+    
+    // === 캐시 상태 업데이트 ===
+    updateCacheStatus(cache);
+    
+    // === 마지막 분석 시간 업데이트 ===
+    updateLastAnalysisTime(cache.last_analysis_time);
+    
+    // 툴팁 재초기화
+    $('[title]').tooltip('dispose').tooltip();
+}
+
+function updateProgressBarColor(selector, percentage) {
+    const $progressBar = $(selector);
+    
+    // 기존 클래스 제거
+    $progressBar.removeClass('bg-primary bg-info usage-low usage-medium usage-high usage-critical');
+    
+    // 사용률에 따른 색상 적용
+    if (percentage >= 90) {
+        $progressBar.addClass('usage-critical');
+    } else if (percentage >= 75) {
+        $progressBar.addClass('usage-high');
+    } else if (percentage >= 50) {
+        $progressBar.addClass('usage-medium');
+    } else {
+        $progressBar.addClass('usage-low');
+    }
+}
+
+function updateCacheStatus(cache) {
+    // 분석기 상태
+    const analyzerStatus = cache.analyzer_loaded ? '로드됨' : '대기중';
+    const analyzerClass = cache.analyzer_loaded ? 'bg-success' : 'bg-secondary';
+    $('#analyzerCache').removeClass('bg-success bg-secondary').addClass(analyzerClass);
+    $('#analyzerCache').text('분석기: ' + analyzerStatus);
+    
+    // 데이터 캐시 상태
+    const dataClass = cache.log_data_size > 0 ? 'bg-info' : 'bg-secondary';
+    $('#dataCache').removeClass('bg-info bg-secondary').addClass(dataClass);
+    $('#dataCache').text('데이터: ' + cache.log_data_size.toLocaleString() + '개');
+    
+    // 설정 캐시 상태
+    const configStatus = cache.config_cached ? '캐시됨' : '미캐시';
+    const configClass = cache.config_cached ? 'bg-warning text-dark' : 'bg-secondary';
+    $('#configCache').removeClass('bg-warning bg-secondary text-dark').addClass(configClass);
+    $('#configCache').text('설정: ' + configStatus);
+}
+
+function updateLastAnalysisTime(lastAnalysisTime) {
+    const $timeElement = $('#lastAnalysisTime');
+    
+    if (lastAnalysisTime) {
+        try {
+            const analysisDate = new Date(lastAnalysisTime);
+            const now = new Date();
+            const diffMinutes = Math.floor((now - analysisDate) / (1000 * 60));
+            
+            let timeText = '';
+            if (diffMinutes < 1) {
+                timeText = '방금 전';
+            } else if (diffMinutes < 60) {
+                timeText = diffMinutes + '분 전';
+            } else if (diffMinutes < 1440) {
+                timeText = Math.floor(diffMinutes / 60) + '시간 전';
+            } else {
+                timeText = analysisDate.toLocaleDateString();
+            }
+            
+            $timeElement.text('마지막 분석: ' + timeText);
+            $timeElement.attr('title', '마지막 분석 시간: ' + analysisDate.toLocaleString());
+        } catch (e) {
+            $timeElement.text('마지막 분석: 오류');
+        }
+    } else {
+        $timeElement.text('마지막 분석: 없음');
+        $timeElement.attr('title', '아직 분석이 수행되지 않았습니다');
+    }
+}
 </script>
 {% endblock %}
