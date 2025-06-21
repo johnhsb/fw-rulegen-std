@@ -168,6 +168,18 @@
         transform: scale(1.2) rotate(90deg);
     }
     
+    /* 로그 파일 아이템 호버 시 다운로드 버튼 강조 */
+    .log-file-item:hover .download-btn {
+        border-color: #20c997;
+        color: #20c997;
+    }
+    
+    .log-file-item:hover .download-btn:hover {
+        background-color: #20c997;
+        border-color: #20c997;
+        color: #fff;
+    }
+    
     /* 아이콘 애니메이션 */
     .log-file-item .bi-file-earmark-text {
         transition: all 0.3s ease;
@@ -222,6 +234,29 @@
         to {
             opacity: 1;
         }
+    }
+
+        /* 다운로드 버튼 스타일 */
+    .download-btn {
+        background-color: transparent;
+        border-color: #198754;
+        color: #198754;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+        line-height: 1;
+        border-radius: 0.375rem;
+        transition: all 0.3s ease;
+    }
+    
+    .download-btn:hover {
+        background-color: #198754;
+        border-color: #198754;
+        color: #fff;
+        transform: scale(1.05);
+    }
+    
+    .download-btn:focus {
+        box-shadow: 0 0 0 0.25rem rgba(25, 135, 84, 0.25);
     }
 </style>
 {% endblock %}
@@ -464,6 +499,11 @@ function loadLogFiles() {
                         '</div>' +
                         '<div class="d-flex align-items-center">' +
                         '<span class="badge bg-primary rounded-pill me-2">' + formatFileSize(file.size) + '</span>' +
+                        '<button class="btn btn-sm btn-outline-success me-2 download-btn" ' +
+                        'data-filename="' + file.filename + '" title="파일 다운로드" ' +
+                        'onclick="event.stopPropagation(); downloadLogFile(\'' + file.filename + '\')">' +
+                        '<i class="bi bi-download"></i>' +
+                        '</button>' +
                         '<i class="bi bi-arrow-right-circle text-success" title="분석하기"></i>' +
                         '</div>' +
                         '</li>';
@@ -471,7 +511,7 @@ function loadLogFiles() {
                 html += '</ul>';
                 $('#logFilesList').html(html);
                 
-                // 파일 전체 클릭 이벤트 추가
+                // 파일 전체 클릭 이벤트 추가 (분석용)
                 $('.log-file-item').on('click', function() {
                     var filename = $(this).data('filename');
                     analyzeLogFile(filename);
@@ -485,6 +525,28 @@ function loadLogFiles() {
             $('#logFilesList').html('<div class="alert alert-danger">로그 파일 목록을 가져오는 중 오류가 발생했습니다.</div>');
         }
     });
+}
+
+// 새로운 다운로드 함수 추가
+function downloadLogFile(filename) {
+    if (!filename) {
+        alert('파일명이 지정되지 않았습니다.');
+        return;
+    }
+    
+    // 다운로드 확인
+    if (confirm('로그 파일 "' + filename + '"을 다운로드하시겠습니까?')) {
+        // 다운로드 URL 생성
+        var downloadUrl = '/api/download_log_file?filename=' + encodeURIComponent(filename) + '&type=syslog';
+        
+        // 새 창에서 다운로드 실행 (브라우저가 파일을 직접 다운로드하도록)
+        var link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
 }
 
 function analyzeLogFile(filename) {

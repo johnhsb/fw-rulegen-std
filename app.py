@@ -801,6 +801,45 @@ def api_analyze_syslog_file():
         logger.error(f"단일 Syslog 파일 분석 오류: {e}", exc_info=True)
         return jsonify({'error': f'분석 중 오류가 발생했습니다: {str(e)}'}), 500
 
+@app.route('/api/download_log_file')
+@login_required
+def api_download_log_file():
+    """로그 파일 다운로드 API"""
+    filename = request.args.get('filename')
+    log_type = request.args.get('type', 'syslog')
+    
+    if not filename:
+        return jsonify({'error': '파일명이 지정되지 않았습니다'}), 400
+    
+    # 로그 타입에 따른 디렉토리 결정
+    if log_type == 'syslog':
+        log_dir = Config.LOGS_DIR
+    else:  # upload
+        log_dir = Config.UPLOAD_DIR
+    
+    # 파일 경로 구성
+    file_path = os.path.join(log_dir, filename)
+    
+    # 파일 존재 확인
+    if not os.path.exists(file_path):
+        return jsonify({'error': '파일을 찾을 수 없습니다'}), 404
+    
+    # 보안 검사: 디렉토리 트래버설 공격 방지
+    if not os.path.abspath(file_path).startswith(os.path.abspath(log_dir)):
+        return jsonify({'error': '잘못된 파일 경로입니다'}), 403
+    
+    try:
+        # 파일 다운로드 응답 생성
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='text/plain'
+        )
+    except Exception as e:
+        logger.error(f"파일 다운로드 오류 {file_path}: {e}")
+        return jsonify({'error': '파일 다운로드 중 오류가 발생했습니다'}), 500
+
 @app.route('/visualization/<path:filename>')
 def serve_visualization(filename):
     """시각화 파일 제공 (국가별, ASN별 포함)"""
